@@ -1,0 +1,48 @@
+{
+    "hooks": {
+        "SessionStart": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" register",
+                        "timeout": 20
+                    }
+                ]
+            }
+        ],
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" prompt",
+                        "timeout": 5
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" update",
+                        "timeout": 20
+                    }
+                ]
+            }
+        ],
+        "SessionEnd": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" end",
+                        "timeout": 20
+                    }
+                ]
+            }
+        ]
+    }
+}

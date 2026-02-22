@@ -1,0 +1,6 @@
+node_modules/
+temp/
+nul
+*.stackdump
+bot.log
+bot.pid
