@@ -4,7 +4,7 @@ Discord bot that lets you send messages to Claude Code sessions, monitor running
 
 ---
 
-## Prerequisites
+## Prerequisites [Only Windows was tested]
 
 - [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` in PATH)
 - [Node.js](https://nodejs.org/) 18+
