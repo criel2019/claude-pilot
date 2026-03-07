@@ -2312,51 +2312,6 @@ cmd_uninstall() {
     echo ""
 }
 
-# ── Command: upgrade (self-update from GitHub) ───────────────────────────────
-cmd_upgrade() {
-    local REPO_URL="https://raw.githubusercontent.com/criel2019/claude-tools/master/claude-tracker.sh"
-    local INSTALL_DIR="${TRACKER_DIR}"
-    local BIN="${INSTALL_DIR}/bin/claude-tracker"
-
-    echo ""
-    printf "  ${C_BOLD}Updating Claude Process Tracker from GitHub...${C_RESET}\n"
-    echo ""
-
-    if ! command -v curl &>/dev/null; then
-        printf "  ${C_RED}✗${C_RESET} curl is required for updates.\n"
-        return 1
-    fi
-
-    local tmpfile
-    tmpfile=$(mktemp)
-    trap 'rm -f "${tmpfile}"' EXIT
-
-    printf "  Downloading latest version...\n"
-    if ! curl -fsSL "${REPO_URL}" -o "${tmpfile}"; then
-        printf "  ${C_RED}✗${C_RESET} Download failed. Check your internet connection.\n"
-        return 1
-    fi
-
-    # Sanity check — downloaded file should be a bash script
-    if ! head -1 "${tmpfile}" | grep -q "bash"; then
-        printf "  ${C_RED}✗${C_RESET} Downloaded file does not look like a bash script.\n"
-        return 1
-    fi
-
-    # Backup current binary
-    cp "${BIN}" "${BIN}.backup.$(date '+%Y%m%d%H%M%S')" 2>/dev/null || true
-
-    # Install
-    cp "${tmpfile}" "${BIN}"
-    chmod +x "${BIN}"
-
-    printf "  ${C_GREEN}✅${C_RESET} Update complete.\n"
-    echo ""
-    printf "  ${C_DIM}Installed to: ${BIN}${C_RESET}\n"
-    printf "  ${C_DIM}Old binary backed up as ${BIN}.backup.*${C_RESET}\n"
-    echo ""
-}
-
 # ── Command: watch (real-time monitoring) ────────────────────────────────────
 cmd_watch() {
     local interval="${1:-5}"
@@ -3314,7 +3269,6 @@ case "${COMMAND}" in
     bot)        cmd_bot "$@" ;;
     config)     cmd_config "$@" ;;
     reset)      cmd_reset ;;
-    upgrade)    cmd_upgrade ;;
     uninstall)  cmd_uninstall ;;
     help)
         echo ""
@@ -3346,7 +3300,6 @@ case "${COMMAND}" in
         printf "    ${C_CYAN}config${C_RESET}  notify ${C_DIM}<key> <bool>${C_RESET}  toggle notification\n"
         printf "    ${C_YELLOW}cleanup${C_RESET}                   clean up dead sessions\n"
         printf "    ${C_YELLOW}reset${C_RESET}                     reset state\n"
-        printf "    ${C_CYAN}upgrade${C_RESET}                   update to latest version from GitHub\n"
         printf "    ${C_RED}uninstall${C_RESET}                 remove tracker\n"
         echo ""
         printf "  ${C_BOLD}Diagnostics${C_RESET}\n"
@@ -3363,7 +3316,7 @@ case "${COMMAND}" in
 
         # Suggest similar commands
         _suggestions=""
-        _known_cmds="status watch monitor history usage dashboard report resume cleanup config reset upgrade test uninstall help"
+        _known_cmds="status watch monitor history usage dashboard report resume cleanup config reset test uninstall help"
         _first_char="${COMMAND:0:1}"
         for _cmd in ${_known_cmds}; do
             if [[ "${_cmd:0:1}" == "${_first_char}" ]] || [[ "${_cmd}" == *"${COMMAND}"* ]]; then

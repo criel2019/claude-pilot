@@ -87,18 +87,15 @@ Slash commands are registered automatically on first run.
 
 ## Updating
 
-To update `claude-tracker` to the latest version from GitHub:
-
-```bash
-claude-tracker upgrade
-```
-
-To update the Discord bot:
+This project does not support incremental updates. To update, pull the latest changes from the repo:
 
 ```bash
 git pull
-node bot.js
 ```
+
+Then restart the bot. The installer does not need to be re-run unless the hooks or config format has changed.
+
+> **Note:** Use `git clone` when installing, not the zip download. This is the only way to receive future updates without reinstalling from scratch.
 
 ---
 
