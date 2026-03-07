@@ -2,7 +2,9 @@
 
 Control and monitor your Claude Code sessions from Discord — send messages, watch live token usage, switch models, compress context, and get notifications when Claude finishes — all from your phone or any Discord client.
 
-> **Disclaimer:** This project is not fully tested and is still in development. Use at your own risk. Review the code before running it in a critical environment.
+> **Platform:** Windows only (Git Bash required). The session tracking component relies on Windows-specific process detection (`tasklist`, `claude.exe`) and has not been ported to macOS or Linux.
+
+> **Disclaimer:** Not fully tested. Use at your own risk. Review the code before running it in a critical environment.
 
 ---
 
@@ -21,17 +23,14 @@ Claude Code  →  hooks (claude-tracker)  →  state.json  →  Discord bot  →
 
 ## Prerequisites
 
-> **Windows only tested.** macOS/Linux should work but are less tested.
-
+- Windows with [Git for Windows](https://git-scm.com/download/win) (Git Bash)
 - [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` in PATH)
 - [Node.js](https://nodejs.org/) 18+
 - [jq](https://jqlang.github.io/jq/) — JSON processor
-  - macOS: `brew install jq`
-  - Ubuntu/Debian: `sudo apt install jq`
-  - Windows: `winget install jqlang.jq` or `scoop install jq`
-- [curl](https://curl.se/) (pre-installed on most systems)
-- [flock](https://man7.org/linux/man-pages/man1/flock.1.html) — file locking (pre-installed on Linux; **macOS: `brew install util-linux`**)
-- bash 4.0+ — **Windows: install [Git for Windows](https://git-scm.com/download/win) and use Git Bash**
+  - `winget install jqlang.jq`
+  - or `scoop install jq`
+  - or `choco install jq`
+- [curl](https://curl.se/) (pre-installed on Windows 10+)
 
 > **Security note:** The bot runs Claude with `--dangerously-skip-permissions`, giving Claude read/write access to your machine. By default (`allowed_users: []`) anyone in your Discord server can send commands. Set `allowed_users` to a list of trusted Discord user IDs, or keep the bot in a private server.
 
@@ -51,23 +50,18 @@ Claude Code  →  hooks (claude-tracker)  →  state.json  →  Discord bot  →
 
 ### 2. Install
 
-**macOS / Linux:**
-```bash
-chmod +x install.sh
-./install.sh
-```
+Open Git Bash:
 
-**Windows — open Git Bash:**
 ```bash
 ./install.sh
 ```
 
 The installer:
-- Checks dependencies (`jq`, `curl`, `flock`, `bash 4+`)
+- Checks dependencies (`jq`, `curl`, `bash 4+`)
 - Copies `claude-tracker.sh` to `~/.claude-tracker/bin/claude-tracker`
 - Registers Claude Code hooks in `~/.claude/settings.json`
 - Prompts for Discord Webhook URL, Bot Token, and default working directory
-- Optionally registers auto-start on login (Windows Startup folder / macOS launchd / Linux systemd)
+- Optionally registers auto-start on Windows login
 
 All settings are saved to `~/.claude-tracker/config.json`. See `config.example.json` for the full schema.
 
@@ -85,7 +79,7 @@ npm install
 node bot.js
 ```
 
-**Windows shortcut:** double-click `start-bot.vbs`
+Or double-click `start-bot.vbs` to run it in the background (no terminal window).
 
 Slash commands are registered automatically on first run.
 
@@ -93,13 +87,13 @@ Slash commands are registered automatically on first run.
 
 ## Updating
 
-To update `claude-tracker` to the latest version from GitHub without reinstalling:
+To update `claude-tracker` to the latest version from GitHub:
 
 ```bash
 claude-tracker upgrade
 ```
 
-To update the Discord bot, pull the repo and restart:
+To update the Discord bot:
 
 ```bash
 git pull
@@ -198,12 +192,12 @@ Ended sessions are kept for 10 days, then automatically purged along with their 
 ## File Structure
 
 ```
-install.sh                  Installer — copies tracker, registers hooks, sets config
+install.sh                  Installer (Windows / Git Bash)
 claude-tracker.sh           claude-tracker bash script (copied to ~/.claude-tracker/bin/)
 hooks-settings.json         Claude Code hooks template used by install.sh
 bot.js                      Bot entry point — Discord client, timers, graceful shutdown
 register-gpt-project.js     CLI tool to register a GPT/Codex project
-start-bot.vbs               Windows one-click bot launcher
+start-bot.vbs               Windows background launcher (no terminal window)
 config.example.json         Config schema reference
 gpt-projects.example.md     GPT project registry example
 

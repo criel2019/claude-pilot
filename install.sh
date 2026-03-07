@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Claude Process Tracker — Install Script
+# Windows (Git Bash) only
 # ============================================================================
 set -euo pipefail
 
@@ -21,9 +22,9 @@ if ! command -v jq &>/dev/null; then
     echo "   ERROR: jq is not installed."
     echo ""
     echo "   Install with:"
-    echo "     macOS:           brew install jq"
-    echo "     Ubuntu/Debian:   sudo apt install jq"
-    echo "     Windows (scoop): scoop install jq"
+    echo "     winget install jqlang.jq"
+    echo "     scoop install jq"
+    echo "     choco install jq"
     exit 1
 fi
 echo "   OK  jq"
@@ -34,24 +35,9 @@ if ! command -v curl &>/dev/null; then
 fi
 echo "   OK  curl"
 
-if ! command -v flock &>/dev/null; then
-    _OS="$(uname -s 2>/dev/null)"
-    if [[ "${_OS}" == "Darwin" ]]; then
-        echo "   ERROR: flock is not installed (required on macOS)."
-        echo ""
-        echo "   Install with:"
-        echo "     brew install util-linux"
-        exit 1
-    fi
-    # Linux typically has flock; warn but continue
-    echo "   WARNING: flock not found. File locking may not work correctly."
-fi
-echo "   OK  flock"
-
-# bash version check
 if (( BASH_VERSINFO[0] < 4 )); then
     echo "   WARNING: bash ${BASH_VERSION} detected. bash 4.0+ is recommended."
-    echo "     macOS: brew install bash"
+    echo "   Install Git for Windows: https://git-scm.com/download/win"
     echo "   Continuing, but some features may not work correctly."
 fi
 
@@ -77,16 +63,13 @@ mkdir -p "${HOME}/.claude"
 if [[ -f "${CLAUDE_SETTINGS}" ]]; then
     echo "   Found existing settings.json."
 
-    # Check if tracker hook is already registered
     if jq -e '.hooks.SessionStart[]?.hooks[]?.command | test("claude-tracker")' "${CLAUDE_SETTINGS}" >/dev/null 2>&1; then
         echo "   OK  tracker hooks already installed (skipped)"
     else
-        # Backup existing settings
         cp "${CLAUDE_SETTINGS}" "${CLAUDE_SETTINGS}.backup.$(date '+%Y%m%d%H%M%S')"
         echo "   OK  backup created"
 
-        # Convert Unix path to Windows path for the tracker binary
-        # Windows Git Bash: /c/Users/... -> C:/Users/...
+        # Convert Git Bash path to Windows path: /c/Users/... -> C:/Users/...
         TRACKER_BIN_WIN=$(echo "${BIN_DIR}/claude-tracker" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
         local_hooks=$(sed "s|__TRACKER_BIN__|${TRACKER_BIN_WIN}|g" "${SCRIPT_DIR}/hooks-settings.json")
 
@@ -101,7 +84,6 @@ if [[ -f "${CLAUDE_SETTINGS}" ]]; then
         echo "   OK  hooks added"
     fi
 else
-    # Create new settings.json with placeholder replaced
     TRACKER_BIN_WIN=$(echo "${BIN_DIR}/claude-tracker" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
     sed "s|__TRACKER_BIN__|${TRACKER_BIN_WIN}|g" "${SCRIPT_DIR}/hooks-settings.json" > "${CLAUDE_SETTINGS}"
     echo "   OK  settings.json created"
@@ -110,10 +92,7 @@ fi
 # ── 5. Initialize config ──────────────────────────────────────────────────
 echo ""
 echo "5)  Initializing config..."
-
-# Run tracker once to generate config file
 "${BIN_DIR}/claude-tracker" help > /dev/null 2>&1
-
 echo "   OK  config.json created"
 
 # ── 6. PATH registration ──────────────────────────────────────────────────
@@ -126,7 +105,6 @@ RC_FILE=""
 case "${SHELL_NAME}" in
     zsh)  RC_FILE="${HOME}/.zshrc" ;;
     bash) RC_FILE="${HOME}/.bashrc" ;;
-    fish) RC_FILE="${HOME}/.config/fish/config.fish" ;;
 esac
 
 if [[ -n "${RC_FILE}" ]]; then
@@ -135,19 +113,11 @@ if [[ -n "${RC_FILE}" ]]; then
     else
         echo "   Add the following line to ${RC_FILE}?"
         echo ""
-        if [[ "${SHELL_NAME}" == "fish" ]]; then
-            echo "     fish_add_path ${BIN_DIR}"
-        else
-            echo "     export PATH=\"\${PATH}:${BIN_DIR}\""
-        fi
+        echo "     export PATH=\"\${PATH}:${BIN_DIR}\""
         echo ""
         read -r -p "   Add it now? [y/N] " response
         if [[ "${response}" =~ ^[Yy]$ ]]; then
-            if [[ "${SHELL_NAME}" == "fish" ]]; then
-                echo "fish_add_path ${BIN_DIR}" >> "${RC_FILE}"
-            else
-                echo "export PATH=\"\${PATH}:${BIN_DIR}\"" >> "${RC_FILE}"
-            fi
+            echo "export PATH=\"\${PATH}:${BIN_DIR}\"" >> "${RC_FILE}"
             echo "   OK  PATH updated. Restart your shell or run: source ${RC_FILE}"
         fi
     fi
@@ -197,8 +167,6 @@ echo ""
 echo "   This is the folder Claude opens when no project is specified in /send."
 if [[ -n "${USERPROFILE:-}" ]]; then
     echo "   Example: ${USERPROFILE}\\Projects"
-else
-    echo "   Example: ${HOME}/projects"
 fi
 echo ""
 read -r -p "   Default working directory (Enter = home directory): " default_cwd
@@ -218,126 +186,26 @@ fi
 # ── 10. Auto-start on login ───────────────────────────────────────────────
 echo ""
 echo "10) Auto-start on login (optional)..."
-echo "    Starts the bot and monitor automatically when you log in."
+echo "    Starts the bot and monitor automatically when you log in to Windows."
 echo ""
 read -r -p "   Enable auto-start? [y/N] " autostart_response
 
 if [[ "${autostart_response}" =~ ^[Yy]$ ]]; then
-    _OS="$(uname -s 2>/dev/null)"
-    NODE_BIN="$(command -v node 2>/dev/null || echo "node")"
+    if [[ -n "${APPDATA:-}" ]]; then
+        STARTUP_DIR="${APPDATA}/Microsoft/Windows/Start Menu/Programs/Startup"
+        WIN_VBS_PATH=$(echo "${SCRIPT_DIR}/start-bot.vbs" | sed 's|^/\([a-zA-Z]\)/|\1:/|' | sed 's|/|\\|g')
+        WRAPPER_VBS="${STARTUP_DIR}/claude-tracker-bot.vbs"
 
-    case "${_OS}" in
-        Darwin)
-            # macOS — launchd user agent
-            PLIST_DIR="${HOME}/Library/LaunchAgents"
-            PLIST_FILE="${PLIST_DIR}/com.claude-tracker-bot.plist"
-            LAUNCHER="${INSTALL_DIR}/start-bot.sh"
-            mkdir -p "${PLIST_DIR}"
+        printf 'Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.Run "wscript ""%s""", 0, False\r\n' \
+            "${WIN_VBS_PATH}" > "${WRAPPER_VBS}"
 
-            # Create launcher shell script
-            cat > "${LAUNCHER}" << LAUNCHEOF
-#!/usr/bin/env bash
-cd "${SCRIPT_DIR}"
-"${NODE_BIN}" bot.js &
-"${BIN_DIR}/claude-tracker" monitor 60 &
-wait
-LAUNCHEOF
-            chmod +x "${LAUNCHER}"
-
-            # Create launchd plist
-            cat > "${PLIST_FILE}" << PLISTEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.claude-tracker-bot</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>${LAUNCHER}</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>${INSTALL_DIR}/bot-autostart.log</string>
-  <key>StandardErrorPath</key>
-  <string>${INSTALL_DIR}/bot-autostart.log</string>
-</dict>
-</plist>
-PLISTEOF
-            launchctl load "${PLIST_FILE}" 2>/dev/null || true
-            echo "   OK  launchd agent registered: ${PLIST_FILE}"
-            echo "   To disable: launchctl unload ${PLIST_FILE}"
-            ;;
-
-        Linux)
-            # Linux — systemd user service
-            SYSTEMD_DIR="${HOME}/.config/systemd/user"
-            mkdir -p "${SYSTEMD_DIR}"
-
-            cat > "${SYSTEMD_DIR}/claude-tracker-bot.service" << SVCEOF
-[Unit]
-Description=Claude Tracker Discord Bot
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=${SCRIPT_DIR}
-ExecStart=${NODE_BIN} bot.js
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=default.target
-SVCEOF
-
-            cat > "${SYSTEMD_DIR}/claude-tracker-monitor.service" << MONSVCEOF
-[Unit]
-Description=Claude Tracker Monitor
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=${BIN_DIR}/claude-tracker monitor 60
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=default.target
-MONSVCEOF
-
-            if command -v systemctl &>/dev/null; then
-                systemctl --user daemon-reload
-                systemctl --user enable claude-tracker-bot.service 2>/dev/null || true
-                systemctl --user enable claude-tracker-monitor.service 2>/dev/null || true
-                echo "   OK  systemd user services enabled"
-                echo "   To start now:  systemctl --user start claude-tracker-bot"
-                echo "   To check:      systemctl --user status claude-tracker-bot"
-            else
-                echo "   OK  Service files created (systemd unavailable — start manually)"
-            fi
-            ;;
-
-        *)
-            # Windows (Git Bash: MINGW*, MSYS*, CYGWIN*)
-            if [[ -n "${APPDATA:-}" ]]; then
-                STARTUP_DIR="${APPDATA}/Microsoft/Windows/Start Menu/Programs/Startup"
-                WIN_VBS_PATH=$(echo "${SCRIPT_DIR}/start-bot.vbs" | sed 's|^/\([a-zA-Z]\)/|\1:/|' | sed 's|/|\\|g')
-                WRAPPER_VBS="${STARTUP_DIR}/claude-tracker-bot.vbs"
-
-                printf 'Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.Run "wscript ""%s""", 0, False\r\n' \
-                    "${WIN_VBS_PATH}" > "${WRAPPER_VBS}"
-
-                echo "   OK  Startup entry registered: ${WRAPPER_VBS}"
-                echo "   The bot will start automatically on next Windows login."
-            else
-                echo "   WARNING: APPDATA not set. Cannot register auto-start."
-                echo "   Manually add start-bot.vbs to your Windows Startup folder:"
-                echo "   %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
-            fi
-            ;;
-    esac
+        echo "   OK  Registered: ${WRAPPER_VBS}"
+        echo "   The bot will start automatically on next Windows login."
+    else
+        echo "   WARNING: APPDATA not set. Cannot register auto-start."
+        echo "   Manually place a shortcut to start-bot.vbs in:"
+        echo "   %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+    fi
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────
@@ -351,8 +219,7 @@ echo "║                                                          ║"
 echo "║  Next steps:                                             ║"
 echo "║    1. Restart Claude Code                                ║"
 echo "║    2. npm install        (in the bot directory)          ║"
-echo "║    3. node bot.js        (start the bot)                 ║"
-echo "║       Windows: double-click start-bot.vbs                ║"
+echo "║    3. node bot.js  OR  double-click start-bot.vbs        ║"
 echo "║                                                          ║"
 echo "║  Config file: ~/.claude-tracker/config.json              ║"
 echo "║    bot_token    Discord bot token (required)             ║"
