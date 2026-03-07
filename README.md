@@ -3,6 +3,7 @@
 Discord bot that lets you send messages to Claude Code sessions, monitor running sessions, track token usage, and manage multiple projects — all from your phone or any Discord client.
 
 ⚠️ Disclaimer
+
 This project is not fully tested and is still in development. Use it at your own risk. The developer is not responsible for any issues or damages caused by running this software. Please review the code before executing it in a critical environment.
 ---
 
