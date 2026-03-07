@@ -34,6 +34,20 @@ if ! command -v curl &>/dev/null; then
 fi
 echo "   OK  curl"
 
+if ! command -v flock &>/dev/null; then
+    _OS="$(uname -s 2>/dev/null)"
+    if [[ "${_OS}" == "Darwin" ]]; then
+        echo "   ERROR: flock is not installed (required on macOS)."
+        echo ""
+        echo "   Install with:"
+        echo "     brew install util-linux"
+        exit 1
+    fi
+    # Linux typically has flock; warn but continue
+    echo "   WARNING: flock not found. File locking may not work correctly."
+fi
+echo "   OK  flock"
+
 # bash version check
 if (( BASH_VERSINFO[0] < 4 )); then
     echo "   WARNING: bash ${BASH_VERSION} detected. bash 4.0+ is recommended."
@@ -199,6 +213,131 @@ if [[ -n "${default_cwd}" ]]; then
     echo "   OK  default_cwd saved"
 else
     echo "   INFO: Using home directory as default."
+fi
+
+# ── 10. Auto-start on login ───────────────────────────────────────────────
+echo ""
+echo "10) Auto-start on login (optional)..."
+echo "    Starts the bot and monitor automatically when you log in."
+echo ""
+read -r -p "   Enable auto-start? [y/N] " autostart_response
+
+if [[ "${autostart_response}" =~ ^[Yy]$ ]]; then
+    _OS="$(uname -s 2>/dev/null)"
+    NODE_BIN="$(command -v node 2>/dev/null || echo "node")"
+
+    case "${_OS}" in
+        Darwin)
+            # macOS — launchd user agent
+            PLIST_DIR="${HOME}/Library/LaunchAgents"
+            PLIST_FILE="${PLIST_DIR}/com.claude-tracker-bot.plist"
+            LAUNCHER="${INSTALL_DIR}/start-bot.sh"
+            mkdir -p "${PLIST_DIR}"
+
+            # Create launcher shell script
+            cat > "${LAUNCHER}" << LAUNCHEOF
+#!/usr/bin/env bash
+cd "${SCRIPT_DIR}"
+"${NODE_BIN}" bot.js &
+"${BIN_DIR}/claude-tracker" monitor 60 &
+wait
+LAUNCHEOF
+            chmod +x "${LAUNCHER}"
+
+            # Create launchd plist
+            cat > "${PLIST_FILE}" << PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.claude-tracker-bot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${LAUNCHER}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${INSTALL_DIR}/bot-autostart.log</string>
+  <key>StandardErrorPath</key>
+  <string>${INSTALL_DIR}/bot-autostart.log</string>
+</dict>
+</plist>
+PLISTEOF
+            launchctl load "${PLIST_FILE}" 2>/dev/null || true
+            echo "   OK  launchd agent registered: ${PLIST_FILE}"
+            echo "   To disable: launchctl unload ${PLIST_FILE}"
+            ;;
+
+        Linux)
+            # Linux — systemd user service
+            SYSTEMD_DIR="${HOME}/.config/systemd/user"
+            mkdir -p "${SYSTEMD_DIR}"
+
+            cat > "${SYSTEMD_DIR}/claude-tracker-bot.service" << SVCEOF
+[Unit]
+Description=Claude Tracker Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${SCRIPT_DIR}
+ExecStart=${NODE_BIN} bot.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+SVCEOF
+
+            cat > "${SYSTEMD_DIR}/claude-tracker-monitor.service" << MONSVCEOF
+[Unit]
+Description=Claude Tracker Monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${BIN_DIR}/claude-tracker monitor 60
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+MONSVCEOF
+
+            if command -v systemctl &>/dev/null; then
+                systemctl --user daemon-reload
+                systemctl --user enable claude-tracker-bot.service 2>/dev/null || true
+                systemctl --user enable claude-tracker-monitor.service 2>/dev/null || true
+                echo "   OK  systemd user services enabled"
+                echo "   To start now:  systemctl --user start claude-tracker-bot"
+                echo "   To check:      systemctl --user status claude-tracker-bot"
+            else
+                echo "   OK  Service files created (systemd unavailable — start manually)"
+            fi
+            ;;
+
+        *)
+            # Windows (Git Bash: MINGW*, MSYS*, CYGWIN*)
+            if [[ -n "${APPDATA:-}" ]]; then
+                STARTUP_DIR="${APPDATA}/Microsoft/Windows/Start Menu/Programs/Startup"
+                WIN_VBS_PATH=$(echo "${SCRIPT_DIR}/start-bot.vbs" | sed 's|^/\([a-zA-Z]\)/|\1:/|' | sed 's|/|\\|g')
+                WRAPPER_VBS="${STARTUP_DIR}/claude-tracker-bot.vbs"
+
+                printf 'Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.Run "wscript ""%s""", 0, False\r\n' \
+                    "${WIN_VBS_PATH}" > "${WRAPPER_VBS}"
+
+                echo "   OK  Startup entry registered: ${WRAPPER_VBS}"
+                echo "   The bot will start automatically on next Windows login."
+            else
+                echo "   WARNING: APPDATA not set. Cannot register auto-start."
+                echo "   Manually add start-bot.vbs to your Windows Startup folder:"
+                echo "   %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+            fi
+            ;;
+    esac
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────

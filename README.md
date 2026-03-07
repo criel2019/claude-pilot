@@ -30,6 +30,7 @@ Claude Code  →  hooks (claude-tracker)  →  state.json  →  Discord bot  →
   - Ubuntu/Debian: `sudo apt install jq`
   - Windows: `winget install jqlang.jq` or `scoop install jq`
 - [curl](https://curl.se/) (pre-installed on most systems)
+- [flock](https://man7.org/linux/man-pages/man1/flock.1.html) — file locking (pre-installed on Linux; **macOS: `brew install util-linux`**)
 - bash 4.0+ — **Windows: install [Git for Windows](https://git-scm.com/download/win) and use Git Bash**
 
 > **Security note:** The bot runs Claude with `--dangerously-skip-permissions`, giving Claude read/write access to your machine. By default (`allowed_users: []`) anyone in your Discord server can send commands. Set `allowed_users` to a list of trusted Discord user IDs, or keep the bot in a private server.
@@ -62,10 +63,11 @@ chmod +x install.sh
 ```
 
 The installer:
-- Checks dependencies (`jq`, `curl`, `bash 4+`)
+- Checks dependencies (`jq`, `curl`, `flock`, `bash 4+`)
 - Copies `claude-tracker.sh` to `~/.claude-tracker/bin/claude-tracker`
 - Registers Claude Code hooks in `~/.claude/settings.json`
 - Prompts for Discord Webhook URL, Bot Token, and default working directory
+- Optionally registers auto-start on login (Windows Startup folder / macOS launchd / Linux systemd)
 
 All settings are saved to `~/.claude-tracker/config.json`. See `config.example.json` for the full schema.
 
