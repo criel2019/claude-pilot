@@ -5,6 +5,7 @@ Discord bot that lets you send messages to Claude Code sessions, monitor running
 ⚠️ Disclaimer
 
 This project is not fully tested and is still in development. Use it at your own risk. The developer is not responsible for any issues or damages caused by running this software. Please review the code before executing it in a critical environment.
+
 ---
 
 ## Prerequisites [Only Windows was tested]
