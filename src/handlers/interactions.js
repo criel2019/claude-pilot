@@ -268,7 +268,7 @@ export async function handleInteractionCreate(interaction) {
         await interaction.deferReply();
         await interaction.editReply(await handleStatus());
         break;
-      case 'snapshot': await interaction.reply(handleSnapshot()); break;
+      case 'snapshot': await interaction.reply(await handleSnapshot()); break;
       case 'report':
         await interaction.deferReply();
         await interaction.editReply(handleReport(interaction.options.getString('period') || 'today'));

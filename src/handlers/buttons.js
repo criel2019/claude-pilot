@@ -14,24 +14,33 @@ import { runTurnAndUpdateThread, makeProgressUpdater, drainQueue } from '../clau
 import { terminateSession } from './sessions.js';
 import { handleGptEnd, activeGptSessions } from './gpt.js';
 
+// Separate flag for button-triggered refreshes (distinct from auto-refresh lock)
+let _buttonRefreshing = false;
+
 async function handleButtonDashboardRefresh(interaction) {
-  if (isDashboardRefreshing()) {
+  // Block if either auto-refresh or another button refresh is already running
+  if (isDashboardRefreshing() || _buttonRefreshing) {
     await interaction.deferUpdate();
     return;
   }
-  // Disable button while scanning to prevent double-clicks
-  const disabledRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('dashboard_refresh')
-      .setLabel('Scanning...')
-      .setEmoji('⏳')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(true)
-  );
-  await interaction.update({ components: [disabledRow] });
-  await runTrackerAsync('scan');
-  invalidateAllCaches();
-  await interaction.editReply(buildDashboardEmbed());
+  _buttonRefreshing = true;
+  try {
+    // Include current embeds in update so they aren't cleared while scanning
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('dashboard_refresh')
+        .setLabel('Scanning...')
+        .setEmoji('⏳')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
+    );
+    await interaction.update({ components: [disabledRow] });
+    await runTrackerAsync('scan');
+    invalidateAllCaches();
+    await interaction.editReply(buildDashboardEmbed());
+  } finally {
+    _buttonRefreshing = false;
+  }
 }
 
 async function handleButtonProjectSelect(interaction) {

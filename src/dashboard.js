@@ -5,7 +5,7 @@ import { COLOR } from './constants.js';
 import { getConfig, saveConfig } from './config.js';
 import { getClient } from './state.js';
 import {
-  runTracker, runTrackerAsync, invalidateStateCache,
+  runTrackerAsync, invalidateStateCache,
   invalidateNativeScanCache, invalidateAllCaches, getAliveState, formatTokens,
 } from './tracker.js';
 import { getTokenHistory } from './session.js';
@@ -93,8 +93,8 @@ export async function handleStatus() {
   return buildDashboardEmbed();
 }
 
-export function handleSnapshot() {
-  runTracker('snapshot');
+export async function handleSnapshot() {
+  await runTrackerAsync('snapshot');
   return { content: '✅ Snapshot recorded.', ephemeral: true };
 }
 
