@@ -4,3 +4,10 @@ nul
 *.stackdump
 bot.log
 bot.pid
+
+# User-specific project registry (created on first use, contains local paths)
+gpt-projects.md
+gpt-project-stage.md
+
+# Separate project — not part of this repo
+android-offline-audio-player/

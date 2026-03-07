@@ -1,8 +1,17 @@
 Set WshShell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
 
-' Discord Bot 시작
-WshShell.CurrentDirectory = "C:\Users\User\Desktop\작업 폴더\Claude Tools"
-WshShell.Run """C:\Program Files\nodejs\node.exe"" bot.js", 0, False
+' Use the directory containing this script as the bot directory
+Dim botDir
+botDir = fso.GetParentFolderName(WScript.ScriptFullName)
+WshShell.CurrentDirectory = botDir
 
-' Monitor 시작 (프로세스 스캔, 토큰 스냅샷, idle 알림)
-WshShell.Run "bash ""C:\Users\User\.claude-tracker\bin\claude-tracker"" monitor 60", 0, False
+' Start Discord Bot
+' Requires: Node.js installed and `node` available in system PATH
+WshShell.Run "node bot.js", 0, False
+
+' Start claude-tracker monitor (process scan, token stats, idle alerts)
+' Requires: claude-tracker installed via install.sh
+Dim trackerPath
+trackerPath = WshShell.ExpandEnvironmentStrings("%USERPROFILE%") & "\.claude-tracker\bin\claude-tracker"
+WshShell.Run "bash """ & trackerPath & """ monitor 60", 0, False

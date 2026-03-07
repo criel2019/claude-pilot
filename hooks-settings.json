@@ -5,7 +5,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" register",
+                        "command": "bash \"__TRACKER_BIN__\" register",
                         "timeout": 20
                     }
                 ]
@@ -16,7 +16,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" prompt",
+                        "command": "bash \"__TRACKER_BIN__\" prompt",
                         "timeout": 5
                     }
                 ]
@@ -27,7 +27,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" update",
+                        "command": "bash \"__TRACKER_BIN__\" update",
                         "timeout": 20
                     }
                 ]
@@ -38,7 +38,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bash \"C:/Users/User/.claude-tracker/bin/claude-tracker\" end",
+                        "command": "bash \"__TRACKER_BIN__\" end",
                         "timeout": 20
                     }
                 ]

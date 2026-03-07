@@ -1,0 +1,413 @@
+import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  SEND_TIMEOUT, THREAD_NAME_MAX, THREAD_AUTO_ARCHIVE,
+  EMBED_MAX_CHARS, EMBED_TRIM_CHARS, BOT_DIR,
+} from './constants.js';
+import { getConfig } from './config.js';
+import { pushHistory, updateTokenStats, saveSession, recordErrorInHistory } from './session.js';
+import { cleanupTempFiles } from './files.js';
+import {
+  buildProgressEmbed, buildResultEmbed,
+  buildTurnHistoryEmbed, buildSessionButtons,
+  buildProgressButtons, buildErrorEmbed, buildRetryButton,
+} from './embeds.js';
+
+// ── Context builder ──
+// Constructs a conversation history block injected as context into each Claude turn.
+
+export function buildContextBlock(messageHistory) {
+  if (messageHistory.length === 0) return '';
+
+  const cfg = getConfig();
+  const MAX_RECENT_MESSAGES = (cfg.max_context_history_turns || 4) * 2;
+  const MAX_SUMMARY_CHARS = 150;
+  const MAX_CONTEXT_CHARS = cfg.max_context_chars || 50000;
+
+  const lines = ['[Previous conversation context for continuity]'];
+
+  const olderMessages = messageHistory.length > MAX_RECENT_MESSAGES
+    ? messageHistory.slice(0, messageHistory.length - MAX_RECENT_MESSAGES)
+    : [];
+  const recentMessages = messageHistory.slice(-MAX_RECENT_MESSAGES);
+
+  if (olderMessages.length > 0) {
+    lines.push('--- Earlier (summarized) ---');
+    for (const msg of olderMessages) {
+      const prefix = msg.role === 'user' ? 'User' : 'Claude';
+      const text = msg.content.slice(0, MAX_SUMMARY_CHARS);
+      lines.push(`${prefix}: ${text}${msg.content.length > MAX_SUMMARY_CHARS ? '...' : ''}`);
+    }
+  }
+
+  if (recentMessages.length > 0) {
+    lines.push('--- Recent conversation ---');
+    for (const msg of recentMessages) {
+      const prefix = msg.role === 'user' ? 'User' : 'Claude';
+      const text = msg.content.length > 3000
+        ? msg.content.slice(0, 3000) + '\n[...truncated]'
+        : msg.content;
+      lines.push(`${prefix}: ${text}`);
+    }
+  }
+
+  lines.push('[End of context]');
+  let block = lines.join('\n');
+
+  if (block.length > MAX_CONTEXT_CHARS) {
+    if (block.length > 30000) {
+      console.warn(`[context] Context is ${block.length} chars — trimming`);
+    }
+    const trimmedLines = ['[Previous conversation context for continuity]', '--- Recent conversation ---'];
+    for (const msg of recentMessages.slice(-4)) {
+      const prefix = msg.role === 'user' ? 'User' : 'Claude';
+      const text = msg.content.length > 1000
+        ? msg.content.slice(0, 1000) + '\n[...truncated]'
+        : msg.content;
+      trimmedLines.push(`${prefix}: ${text}`);
+    }
+    trimmedLines.push('[End of context]');
+    block = trimmedLines.join('\n');
+  }
+
+  return block;
+}
+
+// ── Stream JSON parser ──
+// Parses line-delimited JSON events from the Claude CLI stdout stream.
+
+export function parseStreamJson(proc, onEvent) {
+  let buffer = '';
+  proc.stdout.on('data', (chunk) => {
+    buffer += chunk.toString('utf8');
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try { onEvent(JSON.parse(line)); } catch {}
+    }
+  });
+  proc.stdout.on('end', () => {
+    if (buffer.trim()) {
+      try { onEvent(JSON.parse(buffer)); } catch {}
+    }
+  });
+}
+
+// Reads gpt-projects.md for use as a system prompt listing registered projects
+function readProjectList() {
+  try {
+    return readFileSync(join(BOT_DIR, 'gpt-projects.md'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+// ── Claude turn executor ──
+// Spawns the Claude CLI and streams events, calling onUpdate periodically.
+
+export function executeClaudeTurn({ session, userText, onUpdate, timeout = SEND_TIMEOUT }) {
+  const NON_INTERACTIVE_PROMPT = [
+    'CRITICAL: This is a non-interactive, one-shot prompt environment (Discord bot).',
+    'You CANNOT use these interactive tools: EnterPlanMode, ExitPlanMode, AskUserQuestion.',
+    'They will fail silently and the user will never see the questions or plans.',
+    'Instead:',
+    '- Do NOT enter plan mode. Proceed directly with implementation.',
+    '- If you have questions, list them clearly in your text response. The user will answer in the next message.',
+    '- If you want to show a plan, write it directly in your text response.',
+    '- Always work autonomously and make reasonable default decisions when possible.',
+  ].join(' ');
+
+  const projectList = readProjectList();
+  const systemPrompt = projectList
+    ? `${NON_INTERACTIVE_PROMPT}\n\nRegistered projects:\n${projectList}`
+    : NON_INTERACTIVE_PROMPT;
+
+  // Use --resume to continue a previous session when available
+  const args = ['-p', userText];
+  if (session.claudeSessionId) {
+    args.unshift('--resume', session.claudeSessionId);
+  }
+  args.push(
+    '--model', session.model,
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--verbose',
+    '--dangerously-skip-permissions',
+    '--append-system-prompt', systemPrompt,
+  );
+
+  const proc = spawn('claude', args, {
+    cwd: session.cwd,
+    env: { ...process.env, CLAUDECODE: '', TERM: 'dumb', NO_COLOR: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false,
+  });
+  session.proc = proc;
+
+  let displayBuffer = '';
+  let toolStatus = '';
+  let finalResult = '';
+  let stderrBuffer = '';
+  let costData = null;
+  const startTime = Date.now();
+  const cfg = getConfig();
+  const editIntervalMs = cfg.stream_edit_interval_ms || 2000;
+
+  proc.stderr.on('data', (d) => {
+    if (stderrBuffer.length < 10000) stderrBuffer += d.toString('utf8');
+  });
+
+  parseStreamJson(proc, (event) => {
+    // Current CLI format: assistant events (--include-partial-messages)
+    if (event.type === 'assistant' && event.message?.content) {
+      let text = '';
+      for (const block of event.message.content) {
+        if (block.type === 'text') text += block.text;
+        else if (block.type === 'tool_use') toolStatus = `🔧 _${block.name}_ running...`;
+      }
+      if (text) displayBuffer = text;
+      // Clear tool status when the last block is not a tool_use
+      const lastBlock = event.message.content[event.message.content.length - 1];
+      if (lastBlock?.type !== 'tool_use') toolStatus = '';
+    }
+
+    // Legacy format: stream_event (for older CLI versions)
+    if (event.type === 'stream_event') {
+      const ev = event.event;
+      if (ev?.delta?.type === 'text_delta') {
+        displayBuffer += ev.delta.text;
+      }
+      if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
+        toolStatus = `🔧 _${ev.content_block.name}_ running...`;
+      }
+      if (ev?.type === 'content_block_stop' && toolStatus) {
+        displayBuffer += `\n${toolStatus.replace('running...', 'done')}\n`;
+        toolStatus = '';
+      }
+    }
+
+    if (event.type === 'result' && event.result) {
+      // Extract session_id for --resume on the next turn
+      if (event.session_id) {
+        console.log(`[claude] session_id received: ${event.session_id}`);
+        session.claudeSessionId = event.session_id;
+      }
+      finalResult = typeof event.result === 'string'
+        ? event.result
+        : (event.result.text || JSON.stringify(event.result));
+      if (event.cost_usd != null) {
+        costData = {
+          costUsd: event.cost_usd,
+          inputTokens: event.usage?.input_tokens ?? null,
+          outputTokens: event.usage?.output_tokens ?? null,
+        };
+      }
+    }
+  });
+
+  const editTimer = setInterval(async () => {
+    if (displayBuffer.length > 0 && onUpdate) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+      const display = displayBuffer.length > EMBED_MAX_CHARS
+        ? '…' + displayBuffer.slice(-EMBED_TRIM_CHARS)
+        : displayBuffer;
+      const content = display + (toolStatus ? `\n\n${toolStatus}` : '');
+      try {
+        await onUpdate(content, elapsed);
+      } catch {}
+    }
+  }, editIntervalMs);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timeoutTimer = setTimeout(() => {
+      if (!settled) {
+        proc.kill('SIGKILL');
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        settle({
+          displayText: displayBuffer || finalResult,
+          historyText: finalResult || displayBuffer,
+          elapsed,
+          exitCode: -1,
+          timedOut: true,
+          stderr: stderrBuffer,
+          costData,
+        });
+      }
+    }, timeout);
+
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      clearInterval(editTimer);
+      session.proc = null;
+      resolve(result);
+    };
+
+    proc.on('close', (code) => {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      settle({
+        displayText: displayBuffer || finalResult,
+        historyText: finalResult || displayBuffer,
+        elapsed,
+        exitCode: code,
+        timedOut: false,
+        stderr: stderrBuffer,
+        costData,
+      });
+    });
+
+    proc.on('error', (err) => {
+      if (settled) return;
+      // Clear claudeSessionId when --resume fails so the next turn starts fresh
+      if (session.claudeSessionId) {
+        console.warn(`[claude] Resume failed — clearing claudeSessionId: ${err.message}`);
+        session.claudeSessionId = null;
+      }
+      settled = true;
+      clearTimeout(timeoutTimer);
+      clearInterval(editTimer);
+      session.proc = null;
+      reject(new Error(err.message + (stderrBuffer ? `\n${stderrBuffer}` : '')));
+    });
+  });
+}
+
+// Creates a progress updater that edits the starter message embed while Claude is running
+export function makeProgressUpdater(session) {
+  return async (content, elapsed) => {
+    if (!session.starterMessageRef) return;
+    try {
+      await session.starterMessageRef.edit({
+        embeds: [buildProgressEmbed(session, content, elapsed)],
+        components: [buildProgressButtons(session.channelId)],
+      });
+    } catch {}
+  };
+}
+
+// Processes queued messages sequentially after the current turn completes
+export async function drainQueue(session) {
+  if (session.drainingQueue) return; // Prevent re-entrant drain
+  session.drainingQueue = true;
+  try {
+    while (session.pendingMessages?.length > 0) {
+      const item = session.pendingMessages.shift();
+      try {
+        const result = await runTurnAndUpdateThread({
+          session,
+          userText: item.promptText,
+          userDisplayText: item.displayText,
+          onProgress: makeProgressUpdater(session),
+        });
+        if (item.discordMessage) {
+          await item.discordMessage.reactions.removeAll().catch(() => {});
+          await item.discordMessage.react(result.exitCode === 0 ? '✅' : '❌').catch(() => {});
+        }
+      } catch (e) {
+        console.error('[queue] Failed to process queued item:', e.message);
+        recordErrorInHistory(session);
+        if (item.discordMessage) {
+          await item.discordMessage.reactions.removeAll().catch(() => {});
+          await item.discordMessage.react('❌').catch(() => {});
+        }
+        if (session.threadRef) {
+          try { await session.threadRef.send({ embeds: [buildErrorEmbed(session, e.message)] }); } catch {}
+        }
+      } finally {
+        if (item.imagePaths?.length) cleanupTempFiles(item.imagePaths);
+      }
+    }
+  } finally {
+    session.drainingQueue = false;
+  }
+}
+
+// Creates a Discord thread attached to the session's starter message
+export async function initSessionThread(session, starterMsg) {
+  const threadName = session.channelName
+    ? `[Claude] #${session.channelName} | ${session.projectName}`
+    : `[Claude] ${session.projectName}`;
+  try {
+    const thread = await starterMsg.startThread({
+      name: threadName.slice(0, THREAD_NAME_MAX),
+      autoArchiveDuration: THREAD_AUTO_ARCHIVE,
+    });
+    session.threadId = thread.id;
+    session.starterMessageId = starterMsg.id;
+    session.threadRef = thread;
+    session.starterMessageRef = starterMsg;
+  } catch (e) {
+    console.error('[thread] Failed to create thread:', e.message);
+    session.starterMessageRef = starterMsg;
+  }
+}
+
+// ── Turn runner ──
+// Executes a single Claude turn, updates the starter embed and posts to the thread.
+
+export async function runTurnAndUpdateThread({ session, userText, userDisplayText, onProgress }) {
+  session.lastTurnText = userText;
+  session.lastTurnDisplayText = userDisplayText || userText;
+  pushHistory(session, 'user', userDisplayText || userText);
+  session.lastActivity = Date.now();
+
+  const resumeInfo = session.claudeSessionId ? `resume: ${session.claudeSessionId.slice(0, 8)}...` : 'new session';
+  console.log(`[turn] ${session.projectName}: "${userText.slice(0, 50)}..." (model: ${session.model}, turn: ${session.turnCount + 1}, ${resumeInfo})`);
+
+  const result = await executeClaudeTurn({
+    session,
+    userText,
+    onUpdate: onProgress,
+  });
+
+  session.turnCount++;
+  pushHistory(session, 'assistant', result.historyText);
+  updateTokenStats(session);
+
+  console.log(`[turn] Done: ${result.elapsed}s, ${result.displayText.length} chars`);
+
+  const failed = result.exitCode !== 0 || result.timedOut;
+  const sessionRow = buildSessionButtons(session.channelId);
+  const retryRow = buildRetryButton(session.channelId);
+  const resultComponents = failed ? [sessionRow, retryRow] : [sessionRow];
+
+  // Update starter message with the final result embed
+  if (session.starterMessageRef) {
+    try {
+      await session.starterMessageRef.edit({
+        embeds: [buildResultEmbed(session, result)],
+        components: resultComponents,
+      });
+    } catch (e) {
+      console.warn('[turn] Failed to edit starter message:', e.message);
+    }
+  }
+
+  // Post per-turn history to the thread
+  if (session.threadRef) {
+    try {
+      // Remove buttons from the previous thread message
+      if (session.lastThreadButtonMsg) {
+        try {
+          await session.lastThreadButtonMsg.edit({ components: [] });
+        } catch (_) {}
+      }
+      const threadMsg = await session.threadRef.send({
+        embeds: [buildTurnHistoryEmbed(session, userDisplayText || userText, result)],
+        components: resultComponents,
+      });
+      session.lastThreadButtonMsg = threadMsg;
+    } catch (e) {
+      console.warn('[turn] Failed to post thread history:', e.message);
+    }
+  }
+
+  saveSession(session);
+
+  return result;
+}

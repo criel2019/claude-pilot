@@ -73,8 +73,11 @@ if [[ -f "${CLAUDE_SETTINGS}" ]]; then
         echo "   ✅ 백업 생성됨"
         
         # [R2-5.1] 기존 배열에 append (대체가 아닌 추가)
-        local_hooks=$(cat "${SCRIPT_DIR}/hooks-settings.json")
-        
+        # __TRACKER_BIN__ 플레이스홀더를 실제 설치 경로로 치환
+        # Windows Git Bash: /c/Users/... → C:/Users/... 형식으로 변환
+        TRACKER_BIN_WIN=$(echo "${BIN_DIR}/claude-tracker" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
+        local_hooks=$(sed "s|__TRACKER_BIN__|${TRACKER_BIN_WIN}|g" "${SCRIPT_DIR}/hooks-settings.json")
+
         merged=$(jq --argjson new_hooks "$(echo "${local_hooks}" | jq '.hooks')" '
             .hooks.SessionStart = ((.hooks.SessionStart // []) + $new_hooks.SessionStart) |
             
@@ -87,8 +90,9 @@ if [[ -f "${CLAUDE_SETTINGS}" ]]; then
         echo "   ✅ hooks 추가 완료"
     fi
 else
-    # 새로 생성
-    cp "${SCRIPT_DIR}/hooks-settings.json" "${CLAUDE_SETTINGS}"
+    # 새로 생성 — __TRACKER_BIN__ 플레이스홀더를 실제 경로로 치환 후 저장
+    TRACKER_BIN_WIN=$(echo "${BIN_DIR}/claude-tracker" | sed 's|^/\([a-zA-Z]\)/|\1:/|')
+    sed "s|__TRACKER_BIN__|${TRACKER_BIN_WIN}|g" "${SCRIPT_DIR}/hooks-settings.json" > "${CLAUDE_SETTINGS}"
     echo "   ✅ settings.json 생성됨"
 fi
 
@@ -142,7 +146,7 @@ fi
 
 # ── 7. Discord Webhook 설정 ─────────────────────────────────────────────
 echo ""
-echo "7️⃣  Discord Webhook 설정..."
+echo "7️⃣  Discord Webhook 설정 (claude-tracker 알림용)..."
 echo ""
 echo "   Discord 채널에서 Webhook URL을 생성하세요:"
 echo "   채널 설정 → 연동 → 웹훅 → 새 웹후크"
@@ -153,30 +157,80 @@ if [[ -n "${webhook_url}" ]]; then
     "${BIN_DIR}/claude-tracker" config webhook "${webhook_url}"
 fi
 
+# ── 8. Discord Bot Token 설정 ────────────────────────────────────────────
+echo ""
+echo "8️⃣  Discord Bot 토큰 설정..."
+echo ""
+echo "   Discord Developer Portal에서 봇을 생성하고 토큰을 발급받으세요:"
+echo "   https://discord.com/developers/applications"
+echo "   → New Application → Bot → Reset Token"
+echo "   (Message Content Intent도 활성화하세요)"
+echo ""
+read -r -p "   Bot Token (나중에 설정하려면 Enter): " bot_token
+
+CONFIG_FILE="${INSTALL_DIR}/config.json"
+if [[ -n "${bot_token}" ]]; then
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        tmp=$(jq --arg v "${bot_token}" '.bot_token = $v' "${CONFIG_FILE}")
+        echo "${tmp}" > "${CONFIG_FILE}"
+    else
+        jq -n --arg v "${bot_token}" '{"bot_token": $v}' > "${CONFIG_FILE}"
+    fi
+    echo "   ✅ bot_token 저장됨"
+else
+    echo "   ⚠️  나중에 ~/.claude-tracker/config.json에 bot_token을 직접 추가하세요."
+fi
+
+# ── 9. 기본 작업 디렉토리 설정 ──────────────────────────────────────────
+echo ""
+echo "9️⃣  기본 작업 디렉토리 설정..."
+echo ""
+echo "   /send에서 프로젝트를 지정하지 않을 때 Claude가 열리는 폴더입니다."
+if [[ -n "${USERPROFILE:-}" ]]; then
+    echo "   예: ${USERPROFILE}\\Projects"
+else
+    echo "   예: ${HOME}/projects"
+fi
+echo ""
+read -r -p "   기본 작업 디렉토리 (Enter=홈 디렉토리 사용): " default_cwd
+
+if [[ -n "${default_cwd}" ]]; then
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        tmp=$(jq --arg v "${default_cwd}" '.default_cwd = $v' "${CONFIG_FILE}")
+        echo "${tmp}" > "${CONFIG_FILE}"
+    else
+        jq -n --arg v "${default_cwd}" '{"default_cwd": $v}' > "${CONFIG_FILE}"
+    fi
+    echo "   ✅ default_cwd 저장됨"
+else
+    echo "   ℹ️  홈 디렉토리를 기본값으로 사용합니다."
+fi
+
 # ── 완료 ──────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║                    ✅ 설치 완료!                        ║"
 echo "╠══════════════════════════════════════════════════════════╣"
 echo "║                                                          ║"
-echo "║  사용법:                                                 ║"
-echo "║    claude-tracker status      현황 보기                  ║"
-echo "║    claude-tracker usage       토큰 사용량 통계           ║"
-echo "║    claude-tracker monitor     백그라운드 폴링 시작       ║"
-echo "║    claude-tracker dashboard   Discord에 대시보드 전송    ║"
+echo "║  ⚠️  Claude Code를 재시작해야 훅이 적용됩니다.          ║"
 echo "║                                                          ║"
-echo "║  설정:                                                   ║"
-echo "║    claude-tracker config webhook <URL>                   ║"
-echo "║    claude-tracker config alias <dir> <별칭>              ║"
-echo "║    claude-tracker config show                            ║"
-echo "║                                                          ║"
-echo "║  Hook 자동 실행:                                         ║"
-echo "║    SessionStart       → 세션 등록 + 알림                 ║"
-echo "║    UserPromptSubmit   → idle→active 전환                 ║"
-echo "║    Stop               → 작업 완료 + 알림                 ║"
-echo "║    SessionEnd         → 세션 종료 + 토큰 기록 + 알림     ║"
+echo "║  다음 단계:                                              ║"
+echo "║    1. Claude Code 재시작                                 ║"
+echo "║    2. npm install        (봇 디렉토리에서)               ║"
+echo "║    3. node bot.js        (봇 실행)                       ║"
+echo "║       Windows: start-bot.vbs 더블클릭                    ║"
 echo "║                                                          ║"
 echo "║  설정 파일: ~/.claude-tracker/config.json                ║"
+echo "║    bot_token    Discord 봇 토큰 (필수)                   ║"
+echo "║    default_cwd  기본 작업 디렉토리                       ║"
+echo "║    webhook      Discord 알림 Webhook URL                 ║"
+echo "║    allowed_users  허용할 Discord 사용자 ID 목록          ║"
+echo "║                   (비워두면 서버 전체 허용)              ║"
+echo "║                                                          ║"
+echo "║  claude-tracker 커맨드:                                  ║"
+echo "║    status    현황 보기                                    ║"
+echo "║    usage     토큰 사용량 통계                             ║"
+echo "║    monitor   백그라운드 폴링 시작                        ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
-echo "이제 Claude Code를 시작하면 자동으로 추적됩니다! 🚀"
+echo "Claude Code를 재시작하면 자동 추적이 시작됩니다! 🚀"

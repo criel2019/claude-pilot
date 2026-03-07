@@ -1,0 +1,23 @@
+{
+  "_comment": "This is the schema for ~/.claude-tracker/config.json — copy this structure and fill in your values.",
+
+  "bot_token": "YOUR_DISCORD_BOT_TOKEN_HERE",
+
+  "default_cwd": "C:\\Users\\YourName\\Projects",
+
+  "allowed_users": [],
+
+  "session_timeout_minutes": 60,
+
+  "stream_edit_interval_ms": 2000,
+
+  "max_context_history_turns": 4,
+
+  "max_context_chars": 50000,
+
+  "token_warning_thresholds": {
+    "caution": 20000,
+    "warning": 50000,
+    "critical": 100000
+  }
+}

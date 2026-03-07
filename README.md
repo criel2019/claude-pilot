@@ -1,104 +1,184 @@
-# 🤖 Claude Process Tracker
+# Claude Process Tracker + Discord Bot
 
-Claude Code 세션을 자동으로 추적하고 Discord에 알림을 보내는 도구.
-여러 프로젝트 인스턴스를 동시에 관리하며, 놀고 있는 인스턴스를 찾아 작업을 지시할 수 있도록 돕습니다.
+Discord bot that lets you send messages to Claude Code sessions, monitor running sessions, track token usage, and manage multiple projects — all from your phone or any Discord client.
 
-## 설치
+---
 
+## Prerequisites
+
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` in PATH)
+- [Node.js](https://nodejs.org/) 18+
+- [jq](https://jqlang.github.io/jq/) — JSON processor used by `claude-tracker`
+  - macOS: `brew install jq`
+  - Ubuntu/Debian: `sudo apt install jq`
+  - Windows: `winget install jqlang.jq` or `choco install jq` or `scoop install jq`
+- [curl](https://curl.se/) (usually pre-installed on macOS/Linux/Windows 10+)
+- bash 4.0+ — **Windows users: install [Git for Windows](https://git-scm.com/download/win) and use Git Bash**
+
+> **Security note:** The bot runs Claude with `--dangerously-skip-permissions`, which allows Claude to read and write files on your machine. By default (`allowed_users: []`) anyone in your Discord server can send commands. Set `allowed_users` in `config.json` to a list of trusted Discord user IDs, or keep the bot in a private server.
+
+---
+
+## Setup
+
+### 1. Create a Discord Bot
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. **New Application** → name it anything → **Bot** tab
+3. Enable **Message Content Intent** under Bot > Privileged Gateway Intents
+4. **Reset Token** → copy the bot token (you'll need it in step 2)
+5. **Invite the bot** to your server via OAuth2 > URL Generator:
+   - Scopes: `bot`, `applications.commands`
+   - Bot Permissions: `Send Messages`, `Read Message History`, `Create Public Threads`, `Manage Threads`, `Embed Links`, `Add Reactions`, `Attach Files`
+
+### 2. Install
+
+**macOS / Linux:**
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-## 파일 구조
-
-```
-claude-tracker.sh       메인 스크립트 (~1950줄)
-install.sh              설치 및 hook 등록 자동화
-hooks-settings.json     Claude Code settings.json에 병합할 hook 정의
+**Windows — open Git Bash, then:**
+```bash
+./install.sh
 ```
 
-설치 후 생성되는 파일:
+The installer will:
+- Check dependencies (`jq`, `curl`, `bash 4+`)
+- Install `claude-tracker` to `~/.claude-tracker/bin/`
+- Register Claude Code hooks in `~/.claude/settings.json`
+- Prompt for: Discord **Webhook URL**, **Bot Token**, **default working directory**
 
-```
-~/.claude-tracker/
-  ├── bin/claude-tracker   실행 파일
-  ├── config.json          설정 (webhook, alias, 알림 토글)
-  ├── state.json           세션/프로젝트 실시간 상태
-  ├── tracker.log          이벤트 로그
-  └── usage.jsonl          토큰 사용량 기록 (세션 종료 시 자동)
-```
+All answers are saved to `~/.claude-tracker/config.json`. You can edit it manually at any time — see `config.example.json` for the full schema.
 
-## Hook 흐름
+> **After install.sh: restart Claude Code** so the newly registered hooks take effect.
 
-```
-SessionStart       → register → active 등록 + 🟢 Discord 알림
-UserPromptSubmit   → prompt   → idle→active 전환 (실시간)
-Stop               → update   → active→idle + 디바운싱된 ✅ 알림
-SessionEnd         → end      → 세션 제거 + 토큰 기록 + 🔴 알림
-```
-
-## 커맨드
-
-### 조회
-
-| 커맨드 | 축약 | 설명 |
-|--------|------|------|
-| `status` | `s` | 전체 프로젝트 현황 (ANSI 터미널) |
-| `watch [초]` | `w` | 실시간 모니터링 (기본 5초, Ctrl+C 종료) |
-| `monitor [초|stop]` | `m` | 백그라운드 폴링 데몬 (기본 60초) |
-| `history` | `h` | 프로젝트별 통계 & 최근 이벤트 |
-| `usage [기간]` | `u` | 토큰 사용량 통계 |
-| `dashboard` | `d` | Discord에 대시보드 embed 전송 |
-
-### 관리
-
-| 커맨드 | 설명 |
-|--------|------|
-| `config show` | 현재 설정 보기 |
-| `config webhook <URL>` | Discord Webhook URL 설정 |
-| `config alias <경로> <별칭>` | 프로젝트 별칭 |
-| `config notify <키> <bool>` | 알림 토글 (on_start/on_complete/on_error/on_idle) |
-| `cleanup` | 비활성 세션 정리 |
-| `reset` | state.json 초기화 |
-| `test` | 연결 & 설정 진단 |
-| `uninstall` | 트래커 완전 제거 |
-
-## 모니터링
-
-### monitor (백그라운드 폴링)
+### 3. Install Node dependencies
 
 ```bash
-claude-tracker monitor       # 60초 간격으로 시작
-claude-tracker monitor 30    # 30초 간격
-claude-tracker monitor stop  # 중지
+npm install
 ```
 
-매 주기마다:
-- 각 세션의 transcript 파일 mtime을 확인하여 state 동기화
-- transcript 변경 < 2분 → active / 그 외 → idle
-- transcript 파일 삭제됨 → dead 세션 자동 제거
-- idle이 설정 시간 초과 → Discord "💤 유휴 세션" 알림
+### 4. Invite the bot and run
 
-### usage (토큰 통계)
+Make sure the bot is in your Discord server, then:
 
 ```bash
-claude-tracker usage          # 오늘
-claude-tracker usage week     # 최근 7일
-claude-tracker usage month    # 최근 30일
-claude-tracker usage all      # 전체
-claude-tracker usage 2026-02-01  # 특정 날짜 이후
+node bot.js
 ```
 
-세션 종료 시 transcript JSONL에서 자동 추출하는 정보:
-- input/output/cache 토큰 수
-- costUSD (API 사용 시)
-- 사용 모델
-- 사용자 프롬프트 최근 5개
+**Windows shortcut:** double-click `start-bot.vbs`
 
-## 의존성
+Slash commands (`/send`, `/status`, etc.) are registered automatically when the bot starts.
 
-- **jq** (필수) — JSON 처리
-- **curl** (필수) — Discord webhook
-- **bash 4.0+** (권장) — macOS는 `brew install bash`
-- **flock** (선택) — 있으면 사용, 없으면 mkdir 기반 잠금
+---
+
+## File Structure
+
+```
+bot.js                      Entry point — Discord client setup, timers, shutdown
+src/
+  config.js                 Config loader with TTL cache + hot-reload
+  constants.js              Path constants, Discord limits, color codes
+  state.js                  Shared in-memory state (activeSessions, client)
+  session.js                Session CRUD, history, token stats, queue
+  claude.js                 Claude CLI spawning, stream parsing, turn execution
+  tracker.js                claude-tracker shell integration + native process scan
+  dashboard.js              /status, /report, /dashboard, auto-refresh logic
+  embeds.js                 Discord embed builders
+  files.js                  Image/text attachment handling
+  commands.js               Slash command definitions
+  handlers/
+    interactions.js         Main dispatcher: buttons, modals, select menus, slash commands
+    send.js                 /send — create/resume Claude sessions
+    sessions.js             /end, /session, /sessions, terminateSession
+    project.js              /project — set channel default project
+    message.js              Plain message handler (follow-up in active sessions)
+    gpt.js                  /gpt — OpenAI Codex sessions
+
+~/.claude-tracker/          Created by install.sh
+  bin/claude-tracker        Main shell script
+  config.json               Your configuration (bot_token, default_cwd, etc.)
+  state.json                Live session state (updated by hooks + monitor)
+  bot-sessions/             Persisted Discord bot sessions (JSON per session)
+  token-history.jsonl       Token usage records
+  failed-prompts.jsonl      Log of failed sends (for debugging)
+```
+
+---
+
+## Discord Commands
+
+### Claude Sessions
+
+| Command | Description |
+|---------|-------------|
+| `/send [message] [project] [model] [file] [image]` | Send a message to Claude. Creates a new session or resumes the existing one. |
+| `/end` | Terminate the current session in this channel |
+| `/session` | Show current session info (model, turns, context size, etc.) |
+| `/sessions` | List saved sessions and reload one |
+| `/project` | Set this channel's default project |
+| `/compact` | Summarize and compress the conversation context |
+| `/model <model>` | Change the model for the current session |
+
+### Monitoring
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Show all running Claude processes |
+| `/dashboard` | Post a live-updating dashboard embed |
+| `/snapshot` | Record a token usage snapshot now |
+| `/report [period]` | Token usage report (today / week / all) |
+
+### GPT / Codex _(optional — requires OpenAI Codex CLI)_
+
+| Command | Description |
+|---------|-------------|
+| `/gpt <message> [project] [model]` | Start a Codex session |
+| `/gpt-project` | List registered GPT projects |
+
+> Requires the `codex` CLI (`npm install -g @openai/codex`) and an OpenAI API key. If you don't use Codex, ignore these commands — they have no effect on the Claude features.
+
+---
+
+## GPT Projects
+
+Register projects for use with `/gpt`:
+
+```bash
+node register-gpt-project.js my-app "C:\Users\YourName\Projects\my-app"
+```
+
+Or copy `gpt-projects.example.md` to `gpt-projects.md` and edit it manually.
+
+The bot auto-creates `gpt-projects.md` on first registration. This file is gitignored (contains your local paths).
+
+---
+
+## Hook Flow (claude-tracker)
+
+```
+SessionStart       → active session registered  + Discord notification
+UserPromptSubmit   → idle → active transition
+Stop               → active → idle             + debounced completion notification
+SessionEnd         → session removed           + token stats recorded
+```
+
+---
+
+## Persistent Sessions
+
+Sessions survive bot restarts. On startup, the bot restores all non-ended sessions from `~/.claude-tracker/bot-sessions/` and reconnects to their Discord threads.
+
+Sessions with an existing Claude session ID support `--resume` (conversation context is preserved across bot restarts).
+
+Ended sessions are kept for 10 days, then automatically deleted along with their Discord thread starter messages.
+
+---
+
+## Dependencies
+
+- `discord.js` ^14 — Discord API client
+- `claude` CLI — must be installed and in PATH
+- `bash`, `jq`, `curl` — used by the claude-tracker shell script
