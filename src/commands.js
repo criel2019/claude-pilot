@@ -28,9 +28,10 @@ export const commands = [
     .addStringOption(o => o.setName('message').setDescription('Message to send (optional if file attached)').setRequired(false))
     .addStringOption(o => o.setName('project').setDescription('Project name').setAutocomplete(true))
     .addStringOption(o => o.setName('model').setDescription('Model to use').addChoices(
-      { name: 'Opus (default, powerful)', value: 'opus'   },
-      { name: 'Sonnet (fast)',            value: 'sonnet' },
-      { name: 'Haiku (lightweight)',      value: 'haiku'  },
+      { name: 'Opus (default, powerful)',       value: 'opus'     },
+      { name: 'Opus Plan (opus+sonnet, saves)', value: 'opusplan' },
+      { name: 'Sonnet (fast)',                  value: 'sonnet'   },
+      { name: 'Haiku (lightweight)',            value: 'haiku'    },
     ))
     .addAttachmentOption(o => o.setName('file').setDescription('Text file (.txt/.md) — for content over 4000 chars').setRequired(false))
     .addAttachmentOption(o => o.setName('image').setDescription('Image attachment').setRequired(false))
@@ -49,9 +50,10 @@ export const commands = [
     .setName('model')
     .setDescription('Change the model for this session')
     .addStringOption(o => o.setName('model').setDescription('Model to use').setRequired(true).addChoices(
-      { name: 'Opus (powerful)', value: 'opus'   },
-      { name: 'Sonnet (fast)',   value: 'sonnet' },
-      { name: 'Haiku (lightweight)', value: 'haiku' },
+      { name: 'Opus (powerful)',                value: 'opus'     },
+      { name: 'Opus Plan (opus+sonnet, saves)', value: 'opusplan' },
+      { name: 'Sonnet (fast)',                  value: 'sonnet'   },
+      { name: 'Haiku (lightweight)',            value: 'haiku'    },
     )),
 
   new SlashCommandBuilder()

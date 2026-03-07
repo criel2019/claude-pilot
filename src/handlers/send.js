@@ -149,7 +149,6 @@ export async function handleSend(interaction) {
   } else if (explicitModel) {
     session.model = explicitModel;
   }
-
   // Prepare image attachments and build the final prompt
   const imagePaths = await prepareImageAttachments(attachments);
   const baseDisplayText = fileLabel
