@@ -4,7 +4,7 @@
 
 <br/>
 
-### Run Claude Code from Discord — anywhere, anytime.
+### Run Claude Code from Discord.
 
 [![Discord.js](https://img.shields.io/badge/discord.js-v14-5865F2?logo=discord&logoColor=white)](https://discord.js.org/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -14,10 +14,8 @@
 
 <br/>
 
-**Claude Pilot** turns your Discord server into a remote control for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
-Send prompts, monitor sessions, track token usage, and manage projects — all from your phone or any device with Discord.
-
-No browser tabs. No SSH tunnels. No terminal babysitting. Just type a slash command and go.
+**Claude Pilot** is a Discord bot that interfaces with [Claude Code](https://code.claude.com/docs/en/overview) CLI.
+Send prompts, monitor sessions, track token usage, and manage projects from Discord.
 
 <br/>
 
@@ -31,17 +29,15 @@ No browser tabs. No SSH tunnels. No terminal babysitting. Just type a slash comm
 
 ## Background
 
-This project was built before Anthropic released [Remote Control](https://docs.anthropic.com/en/docs/claude-code/remote) for Claude Code. Now that official remote access exists, Claude Pilot is being open-sourced for anyone who might find the Discord-based approach useful.
+Anthropic now offers official [Remote Control](https://code.claude.com/docs/en/remote-control#continue-local-sessions-from-any-device-with-remote-control) for Claude Code. Claude Pilot is a separate community project that takes a Discord-based approach.
 
-**What Claude Pilot does differently:**
+**What Claude Pilot does:**
 
-- Runs Claude Code sessions through **Discord slash commands** — no browser or terminal needed on the remote side
-- **Multiple users** in a Discord server can see session progress in real time
-- Sessions are **persistent** — they survive bot restarts and support `--resume`
-- Built-in **token usage tracking**, dashboards, and reports
-- Supports starting **new sessions remotely** via `/send`
-
-It's not a replacement for Remote Control — just a different approach that happened to exist first.
+- Runs Claude Code sessions through Discord slash commands
+- Multiple users in a Discord server can see session output
+- Sessions persist across bot restarts and support `--resume`
+- Token usage tracking, dashboards, and reports
+- Start new sessions via `/send`
 
 ---
 
@@ -56,9 +52,9 @@ Claude Pilot works differently:
 - It spawns the **official `claude` CLI** as a subprocess — the same binary you run in your terminal
 - Authentication is handled entirely by Claude Code itself — Claude Pilot never touches your credentials
 - All rate limiting, telemetry, and usage enforcement remain under Anthropic's control
-- It's functionally identical to you typing commands in a terminal, just triggered from Discord
+- It spawns `claude` with `--dangerously-skip-permissions`, triggered from Discord instead of a terminal
 
-**There is no token interception, no credential forwarding, and no API bypass.** Claude Pilot is a remote interface to the official tool, not a replacement for it.
+There is no token interception, no credential forwarding, and no API bypass. Claude Pilot is a Discord interface to the official CLI.
 
 ---
 
@@ -106,7 +102,7 @@ Claude Pilot works differently:
 ### Prerequisites
 
 - **Windows** with [Git for Windows](https://git-scm.com/download/win) (Git Bash)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- [Claude Code CLI](https://code.claude.com/docs/en/overview) installed and authenticated
 - [Node.js](https://nodejs.org/) 18+
 - [jq](https://jqlang.github.io/jq/) — `winget install jqlang.jq` or `scoop install jq`
 
