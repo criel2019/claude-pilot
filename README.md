@@ -29,29 +29,19 @@ No browser tabs. No SSH tunnels. No terminal babysitting. Just type a slash comm
 
 ---
 
-## Why Claude Pilot?
+## Background
 
-You start a Claude Code session on your desktop, walk away, and want to check on it from your phone. Or you want to kick off a quick task from bed. Or you want your team to see what Claude is working on in real time.
+This project was built before Anthropic released [Remote Control](https://docs.anthropic.com/en/docs/claude-code/remote) for Claude Code. Now that official remote access exists, Claude Pilot is being open-sourced for anyone who might find the Discord-based approach useful.
 
-Claude Pilot makes this possible by wrapping the **official Claude CLI** in a Discord bot with persistent sessions, live streaming, and slash commands.
+**What Claude Pilot does differently:**
 
-### vs. Claude Code Remote Control (Official)
+- Runs Claude Code sessions through **Discord slash commands** — no browser or terminal needed on the remote side
+- **Multiple users** in a Discord server can see session progress in real time
+- Sessions are **persistent** — they survive bot restarts and support `--resume`
+- Built-in **token usage tracking**, dashboards, and reports
+- Supports starting **new sessions remotely** via `/send`
 
-Anthropic's built-in [Remote Control](https://docs.anthropic.com/en/docs/claude-code/remote) (`/remote`) syncs your local terminal to claude.ai and mobile apps. It's useful for quick handoffs, but has constraints:
-
-| | Claude Pilot | Remote Control |
-|---|---|---|
-| **Subscription** | Works with any Claude Code setup | Pro or Max required (individual only, no Team/Enterprise) |
-| **API key auth** | Supported | Not supported |
-| **Session persistence** | Survives bot restarts, auto-resumes | Terminal closes or machine sleeps too long = session dies |
-| **Concurrent connections** | Multiple channels / users | One remote connection per session |
-| **Access control** | Discord permissions + allowlist | No 2FA; session URL = credential |
-| **Session management** | Named sessions, save/reload, history | Single active session |
-| **Token tracking** | Built-in usage reports & dashboards | No usage visibility |
-| **Network interruption** | Queue-based, resilient | ~10-min timeout kills session |
-| **Remote initiation** | Start new sessions anytime via `/send` | Cannot start sessions remotely; local terminal must be running |
-
-Claude Pilot is not a replacement for Remote Control — it's an alternative approach for users who want **persistent, multi-session, team-visible** control over Claude Code through a familiar interface.
+It's not a replacement for Remote Control — just a different approach that happened to exist first.
 
 ---
 
