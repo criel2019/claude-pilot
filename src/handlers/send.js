@@ -13,12 +13,38 @@ import {
   initSessionThread, runTurnAndUpdateThread, makeProgressUpdater, drainQueue,
 } from '../claude.js';
 import { buildProgressEmbed, buildErrorEmbed, buildProgressButtons } from '../embeds.js';
-import { runTracker, getAliveState, invalidateAllCaches } from '../tracker.js';
+import { runTrackerAsync, getAliveState, invalidateAllCaches } from '../tracker.js';
+
+async function resolveTextAttachment(fileAttachment) {
+  if (!fileAttachment) {
+    return { fileContent: '', fileLabel: '' };
+  }
+
+  const ext = (fileAttachment.name.split('.').pop() || '').toLowerCase();
+  if (!TEXT_EXTENSIONS.has(ext)) {
+    return { fileContent: '', fileLabel: '' };
+  }
+
+  try {
+    const fileContent = await fetchTextFile(fileAttachment);
+    return {
+      fileContent,
+      fileLabel: `File **${fileAttachment.name}** (${fileContent.length.toLocaleString()} chars)`,
+    };
+  } catch (e) {
+    console.warn('[send] Failed to read file:', e.message);
+    return { fileContent: '', fileLabel: '' };
+  }
+}
+
+function buildCombinedMessage(messageText, fileContent) {
+  return [messageText, fileContent].filter(Boolean).join('\n\n---\n\n');
+}
 
 export async function handleSend(interaction) {
   if (!isUserAllowed(interaction.user.id)) {
     return interaction.reply({
-      content: '❌ Not authorized to use /send. Add your user ID to `allowed_users` in config.json.',
+      content: 'Not authorized to use /send. Add your user ID to `allowed_users` in config.json.',
       ephemeral: true,
     });
   }
@@ -35,68 +61,63 @@ export async function handleSend(interaction) {
     interaction.options.getAttachment('image3'),
   ].filter(a => a && isImageFile(a.name));
 
-  // Read text file content (workaround for Discord's 4000-char message limit)
-  let fileContent = '';
-  let fileLabel = '';
-  if (fileAttachment) {
-    const ext = (fileAttachment.name.split('.').pop() || '').toLowerCase();
-    if (TEXT_EXTENSIONS.has(ext)) {
-      try {
-        fileContent = await fetchTextFile(fileAttachment);
-        fileLabel = `📄 **${fileAttachment.name}** (${fileContent.length.toLocaleString()} chars)`;
-      } catch (e) {
-        console.warn('[send] Failed to read file:', e.message);
-      }
-    }
-  }
-
-  // At least one of message or file must be provided
-  const combinedMessage = [messageText, fileContent].filter(Boolean).join('\n\n---\n\n');
-  if (!combinedMessage.trim()) {
+  if (!messageText.trim() && !fileAttachment) {
     return interaction.reply({
-      content: '❌ Please enter a message or attach a text file.',
+      content: 'Please enter a message or attach a text file.',
       ephemeral: true,
     });
   }
 
   const channelName = interaction.channel?.name || '';
 
-  // When /send is called inside a thread, use the parent channel to avoid nested threads
+  // When /send is called inside a thread, use the parent channel to avoid nested threads.
   const effectiveChannelId = interaction.channel?.isThread?.()
     ? (interaction.channel.parentId ?? interaction.channelId)
     : interaction.channelId;
 
-  // Fast busy check before deferring (no I/O needed)
   let session = activeSessions.get(effectiveChannelId);
   if (isSessionBusy(session)) {
     await interaction.deferReply({ flags: 64 });
-    // Download attachments now before the Discord CDN URL expires
+
+    const { fileContent, fileLabel } = await resolveTextAttachment(fileAttachment);
+    const combinedMessage = buildCombinedMessage(messageText, fileContent);
+    if (!combinedMessage.trim()) {
+      await interaction.editReply({ content: 'Please enter a message or attach a readable text file.' });
+      return;
+    }
+
     const queueImagePaths = await prepareImageAttachments(attachments);
     const queueBaseDisplay = fileLabel
       ? (messageText ? `${messageText}\n\n${fileLabel}` : fileLabel)
       : undefined;
-    const { promptText: queuedPrompt, displayText: queuedDisplay } = buildImagePrompt(combinedMessage, queueImagePaths, queueBaseDisplay);
-    const enqueued = enqueueMessage(session, { promptText: queuedPrompt, displayText: queuedDisplay, imagePaths: queueImagePaths });
+    const { promptText: queuedPrompt, displayText: queuedDisplay } = buildImagePrompt(
+      combinedMessage,
+      queueImagePaths,
+      queueBaseDisplay,
+    );
+    const enqueued = enqueueMessage(session, {
+      promptText: queuedPrompt,
+      displayText: queuedDisplay,
+      imagePaths: queueImagePaths,
+    });
     if (!enqueued) {
       cleanupTempFiles(queueImagePaths);
-      await interaction.editReply({ content: `⚠️ Queue is full (max ${QUEUE_MAX_SIZE}). Try again later.` });
+      await interaction.editReply({ content: `Queue is full (max ${QUEUE_MAX_SIZE}). Try again later.` });
       return;
     }
+
     await interaction.editReply({
-      content: `⏳ Added to queue (${session.pendingMessages.length} waiting). Will be processed after the current task.`,
+      content: `Added to queue (${session.pendingMessages.length} waiting). It will run after the current task.`,
     });
     return;
   }
 
-  // Resolve project from channel default (fast, config cache only)
   if (!projectName) {
     const cfg = getConfig();
     const channelDefault = (cfg.channel_defaults || {})[effectiveChannelId];
     if (channelDefault) projectName = channelDefault;
   }
 
-  // Defer before slow I/O (must happen within Discord's 3-second window)
-  // Use ephemeral reply when an existing thread is already attached
   const hasExistingThread = session?.threadId && (!projectName || session.projectName === projectName);
   if (hasExistingThread) {
     await interaction.deferReply({ flags: 64 });
@@ -104,18 +125,23 @@ export async function handleSend(interaction) {
     await interaction.deferReply();
   }
 
-  // Slow operations run after deferring
+  const { fileContent, fileLabel } = await resolveTextAttachment(fileAttachment);
+  const combinedMessage = buildCombinedMessage(messageText, fileContent);
+  if (!combinedMessage.trim()) {
+    await interaction.editReply({ content: 'Please enter a message or attach a readable text file.' });
+    return;
+  }
+
   if (!projectName) {
-    runTracker('scan');
+    await runTrackerAsync('scan');
     invalidateAllCaches();
     const state = getAliveState();
     const activeSess = Object.values(state.sessions || {}).filter(s => s.status === 'active' || s.status === 'idle');
     if (activeSess.length === 1) {
       projectName = activeSess[0].project;
     } else {
-      // Multiple or no active sessions — fall back to known_projects
-      const cfgK = getConfig();
-      const knownNames = Object.keys(cfgK.known_projects || {});
+      const cfg = getConfig();
+      const knownNames = Object.keys(cfg.known_projects || {});
       if (knownNames.length === 1) {
         projectName = knownNames[0];
       } else {
@@ -126,35 +152,35 @@ export async function handleSend(interaction) {
 
   const cwd = findProjectCwd(projectName);
 
-  // Remember CWD so the project can be resumed even after Claude exits
   if (projectName) saveKnownProject(projectName, cwd);
-  // Auto-set channel default if not configured yet
   if (projectName && !getConfig().channel_defaults?.[effectiveChannelId]) {
     setChannelDefaultProject(effectiveChannelId, projectName);
   }
 
-  // Project switch: update session metadata without terminating (Claude --resume handles the move)
   if (session && projectName && session.projectName !== projectName) {
-    console.log(`[send] Project switch: ${session.projectName} → ${projectName} (session kept)`);
+    console.log(`[send] Project switch: ${session.projectName} -> ${projectName} (session kept)`);
     session.projectName = projectName;
     session.cwd = cwd;
-    session.claudeSessionId = null; // New project = fresh Claude session
+    session.claudeSessionId = null;
     saveSession(session);
   }
 
-  // Create or reuse session
   if (!session) {
     session = createSessionObject({ channelId: effectiveChannelId, channelName, projectName, cwd, model });
     activeSessions.set(effectiveChannelId, session);
   } else if (explicitModel) {
     session.model = explicitModel;
   }
-  // Prepare image attachments and build the final prompt
+
   const imagePaths = await prepareImageAttachments(attachments);
   const baseDisplayText = fileLabel
     ? (messageText ? `${messageText}\n\n${fileLabel}` : fileLabel)
     : undefined;
-  const { promptText: finalMessage, displayText: userDisplayText } = buildImagePrompt(combinedMessage, imagePaths, baseDisplayText);
+  const { promptText: finalMessage, displayText: userDisplayText } = buildImagePrompt(
+    combinedMessage,
+    imagePaths,
+    baseDisplayText,
+  );
 
   try {
     if (!session.threadId) {
@@ -175,16 +201,23 @@ export async function handleSend(interaction) {
       });
       await drainQueue(session);
       if (hasExistingThread) {
-        await interaction.editReply({ content: `✅ Done. Check the thread: (<#${session.threadId}>)` });
+        await interaction.editReply({ content: `Done. Check the thread: (<#${session.threadId}>)` });
       }
     } catch (e) {
       console.error(`[send] ${projectName} failed:`, e.message);
-      saveFailedPrompt({ message: combinedMessage, project: projectName, reason: e.message, user: interaction.user.tag });
+      saveFailedPrompt({
+        message: combinedMessage,
+        project: projectName,
+        reason: e.message,
+        user: interaction.user.tag,
+      });
       recordErrorInHistory(session);
       const errPayload = hasExistingThread
-        ? { content: `❌ Error: ${e.message.slice(0, 200)}` }
+        ? { content: `Error: ${e.message.slice(0, 200)}` }
         : { embeds: [buildErrorEmbed(session, e.message)] };
-      try { await interaction.editReply(errPayload); } catch (editErr) {
+      try {
+        await interaction.editReply(errPayload);
+      } catch (editErr) {
         console.warn('[send] Failed to edit error reply:', editErr.message);
       }
     }

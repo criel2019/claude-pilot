@@ -159,10 +159,11 @@ export async function handleSession(interaction) {
 // ── /sessions handler ──
 
 export async function handleSessions(interaction) {
+  await interaction.deferReply({ flags: 64 });
   const sessions = loadAllSessions().sort((a, b) => b.lastActivity - a.lastActivity);
 
   if (sessions.length === 0) {
-    return interaction.reply({ content: 'No saved sessions found.', ephemeral: true });
+    return interaction.editReply({ content: 'No saved sessions found.' });
   }
 
   const select = new StringSelectMenuBuilder()
@@ -186,5 +187,5 @@ export async function handleSessions(interaction) {
     }).join('\n') || '_(none)_');
 
   const row = new ActionRowBuilder().addComponents(select);
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
