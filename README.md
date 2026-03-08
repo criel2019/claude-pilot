@@ -1,126 +1,177 @@
-# Claude Process Tracker + Discord Bot
+<div align="center">
 
-Control and monitor your Claude Code sessions from Discord — send messages, watch live token usage, switch models, compress context, and get notifications when Claude finishes — all from your phone or any Discord client.
+<img src="assets/banner.png" alt="Claude Pilot Banner" width="100%"/>
 
-> **Platform:** Windows only (Git Bash required). The session tracking component relies on Windows-specific process detection (`tasklist`, `claude.exe`) and has not been ported to macOS or Linux.
+<br/>
 
-> **Disclaimer:** Not fully tested. Use at your own risk. Review the code before running it in a critical environment.
+### Run Claude Code from Discord — anywhere, anytime.
+
+[![Discord.js](https://img.shields.io/badge/discord.js-v14-5865F2?logo=discord&logoColor=white)](https://discord.js.org/)
+[![Node.js](https://img.shields.io/badge/node.js-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://git-scm.com/download/win)
+[![License](https://img.shields.io/badge/license-MIT-green)](#license)
+[![Policy](https://img.shields.io/badge/Anthropic_ToS-Compliant-brightgreen)](#policy-compliance)
+
+<br/>
+
+**Claude Pilot** turns your Discord server into a remote control for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+Send prompts, monitor sessions, track token usage, and manage projects — all from your phone or any device with Discord.
+
+No browser tabs. No SSH tunnels. No terminal babysitting. Just type a slash command and go.
+
+<br/>
+
+</div>
 
 ---
 
-## How it works
+## Why Claude Pilot?
 
-Two components work together:
+You start a Claude Code session on your desktop, walk away, and want to check on it from your phone. Or you want to kick off a quick task from bed. Or you want your team to see what Claude is working on in real time.
 
-- **`claude-tracker`** — a bash script installed as Claude Code hooks. It intercepts `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd` events and writes live session state to `~/.claude-tracker/state.json`.
-- **Discord bot** (`bot.js`) — a Node.js Discord.js bot that reads that state, spawns Claude CLI processes on demand, and exposes everything as slash commands.
+Claude Pilot makes this possible by wrapping the **official Claude CLI** in a Discord bot with persistent sessions, live streaming, and slash commands.
 
-```
-Claude Code  →  hooks (claude-tracker)  →  state.json  →  Discord bot  →  Discord
-```
+### vs. Claude Code Remote Control (Official)
+
+Anthropic's built-in Remote Control (`/remote`) is great for quick handoffs, but has significant constraints:
+
+| | Claude Pilot | Remote Control |
+|---|---|---|
+| **Subscription** | Works with any Claude Code plan | Max only ($100–$200/mo) |
+| **Session persistence** | Survives bot restarts, auto-resumes | Terminal closes = session dies |
+| **Multi-user monitoring** | Whole server sees progress | One URL, one viewer |
+| **Access control** | Discord permissions + allowlist | URL = credential (share it = lose it) |
+| **Session management** | Named sessions, save/reload, history | Single active session |
+| **Token tracking** | Built-in usage reports & dashboards | No usage visibility |
+| **Network interruption** | Queue-based, resilient | 10-min timeout kills session |
+| **New tasks** | Start fresh sessions anytime via `/send` | Must return to terminal |
+
+Claude Pilot is not a replacement for Remote Control — it's an alternative approach for users who want **persistent, multi-session, team-visible** control over Claude Code through a familiar interface.
 
 ---
 
-## Prerequisites
+## Policy Compliance
 
-- Windows with [Git for Windows](https://git-scm.com/download/win) (Git Bash)
-- [Claude Code CLI](https://claude.ai/code) installed and authenticated (`claude` in PATH)
+**Claude Pilot does not intercept, forge, or reuse OAuth tokens.**
+
+Some third-party tools have been banned for capturing Claude subscription OAuth credentials and routing API requests through them — effectively bypassing Anthropic's rate limits and billing controls. This violates [Anthropic's Terms of Service](https://www.anthropic.com/policies/consumer-terms).
+
+Claude Pilot works differently:
+
+- It spawns the **official `claude` CLI** as a subprocess — the same binary you run in your terminal
+- Authentication is handled entirely by Claude Code itself — Claude Pilot never touches your credentials
+- All rate limiting, telemetry, and usage enforcement remain under Anthropic's control
+- It's functionally identical to you typing commands in a terminal, just triggered from Discord
+
+**There is no token interception, no credential forwarding, and no API bypass.** Claude Pilot is a remote interface to the official tool, not a replacement for it.
+
+---
+
+## Features
+
+- **`/send`** — Send prompts to Claude, with optional project, model, file, and image attachments
+- **Streaming responses** — Watch Claude's output appear in real time in Discord
+- **Persistent sessions** — Sessions survive bot restarts and support `--resume`
+- **`/project`** — Set per-channel default working directories
+- **`/model`** — Switch models mid-session (Opus, Sonnet, Haiku)
+- **`/compact`** — Compress conversation context when it gets large
+- **`/status`** — See all running Claude processes with live token counts
+- **`/dashboard`** — Auto-refreshing embed showing session health
+- **`/report`** — Token usage reports by day, week, or all time
+- **`/sessions`** — Save, list, and reload previous sessions
+- **GPT/Codex integration** — Optional `/gpt` command for OpenAI Codex sessions
+
+---
+
+## How It Works
+
+```
+┌─────────────┐     hooks      ┌──────────────────┐    state.json    ┌─────────────┐
+│ Claude Code  │ ──────────────▶│  claude-tracker   │ ───────────────▶│             │
+│   (local)    │   SessionStart │   (bash script)   │   live session  │  Discord    │
+│              │   Stop, End    │                    │   data          │  Bot        │
+└─────────────┘                └──────────────────┘                  │  (bot.js)   │
+                                                                      │             │
+┌─────────────┐                                                      │             │
+│  Discord     │◀──── slash commands, streaming responses ───────────│             │
+│  (any device)│────▶ /send, /status, /model, /compact ─────────────▶│             │
+└─────────────┘                                                      └─────────────┘
+```
+
+**Two components:**
+
+1. **`claude-tracker`** — A bash script installed as Claude Code hooks. It captures `SessionStart`, `UserPromptSubmit`, `Stop`, and `SessionEnd` events, writing live session state to `~/.claude-tracker/state.json`.
+
+2. **Discord bot** (`bot.js`) — Reads tracker state, spawns Claude CLI processes on demand, streams responses to Discord, and exposes everything as slash commands.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Windows** with [Git for Windows](https://git-scm.com/download/win) (Git Bash)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 - [Node.js](https://nodejs.org/) 18+
-- [jq](https://jqlang.github.io/jq/) — JSON processor
-  - `winget install jqlang.jq`
-  - or `scoop install jq`
-  - or `choco install jq`
-- [curl](https://curl.se/) (pre-installed on Windows 10+)
+- [jq](https://jqlang.github.io/jq/) — `winget install jqlang.jq` or `scoop install jq`
 
-> **Security note:** The bot runs Claude with `--dangerously-skip-permissions`, giving Claude read/write access to your machine. By default (`allowed_users: []`) anyone in your Discord server can send commands. Set `allowed_users` to a list of trusted Discord user IDs, or keep the bot in a private server.
-
----
-
-## Setup
-
-### 1. Create a Discord bot
+### 1. Create a Discord Bot
 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
 2. **New Application** → **Bot** tab
-3. Under **Privileged Gateway Intents**, enable **Message Content Intent**
-4. **Reset Token** → copy it (you'll need it in step 2)
-5. Invite the bot via **OAuth2 > URL Generator**:
+3. Enable **Message Content Intent** under Privileged Gateway Intents
+4. **Reset Token** → copy it
+5. Invite via **OAuth2 > URL Generator**:
    - Scopes: `bot`, `applications.commands`
-   - Bot Permissions: `Send Messages`, `Read Message History`, `Create Public Threads`, `Manage Threads`, `Embed Links`, `Add Reactions`, `Attach Files`
+   - Permissions: `Send Messages`, `Read Message History`, `Create Public Threads`, `Manage Threads`, `Embed Links`, `Add Reactions`, `Attach Files`
 
 ### 2. Install
 
-Open Git Bash:
-
 ```bash
+git clone https://github.com/criel2019/claude-pilot.git
+cd claude-pilot
 ./install.sh
-```
-
-The installer:
-- Checks dependencies (`jq`, `curl`, `bash 4+`)
-- Copies `claude-tracker.sh` to `~/.claude-tracker/bin/claude-tracker`
-- Registers Claude Code hooks in `~/.claude/settings.json`
-- Prompts for Discord Webhook URL, Bot Token, and default working directory
-- Optionally registers auto-start on Windows login
-
-All settings are saved to `~/.claude-tracker/config.json`. See `config.example.json` for the full schema.
-
-> **Restart Claude Code after install** so the hooks take effect.
-
-### 3. Install Node.js dependencies
-
-```bash
 npm install
 ```
 
-### 4. Run the bot
+The installer checks dependencies, copies the tracker script, registers Claude Code hooks, and prompts for your Discord bot token.
+
+> **Restart Claude Code after install** so the hooks take effect.
+
+### 3. Run
 
 ```bash
 node bot.js
 ```
 
-Or double-click `start-bot.vbs` to run it in the background (no terminal window).
+Or double-click `start-bot.vbs` to run in the background (no terminal window).
 
-Slash commands are registered automatically on first run.
-
----
-
-## Updating
-
-This project does not support incremental updates. To update, pull the latest changes from the repo:
-
-```bash
-git pull
-```
-
-Then restart the bot. The installer does not need to be re-run unless the hooks or config format has changed.
-
-> **Note:** Use `git clone` when installing, not the zip download. This is the only way to receive future updates without reinstalling from scratch.
+Slash commands register automatically on first run.
 
 ---
 
-## Discord Commands
+## Commands
 
 ### Claude Sessions
 
 | Command | Description |
 |---------|-------------|
-| `/send [message] [project] [model] [file] [image]` | Send a message to Claude. Creates a new session or continues the existing one. |
+| `/send [message] [project] [model] [file] [image]` | Send a prompt to Claude. Creates or continues a session. |
 | `/end` | End the current session in this channel |
-| `/session` | Show current session info (model, turns, context size, token usage) |
+| `/session` | Show session info (model, turns, context, tokens) |
 | `/sessions` | List saved sessions and reload one |
 | `/project` | Set the default project for this channel |
-| `/compact` | Summarize and compress the conversation to reduce context size |
-| `/model <model>` | Switch the model for the current session |
+| `/compact` | Compress conversation context |
+| `/model <model>` | Switch model mid-session |
 
 ### Monitoring
 
 | Command | Description |
 |---------|-------------|
-| `/status` | Show all running Claude processes with token counts |
-| `/dashboard` | Post a live-updating dashboard embed in this channel |
-| `/snapshot` | Record a token usage snapshot immediately |
-| `/report [period]` | Token usage report — `today` (default), `week`, or `all` |
+| `/status` | All running Claude processes with token counts |
+| `/dashboard` | Live-updating dashboard embed |
+| `/snapshot` | Record a token usage snapshot |
+| `/report [period]` | Usage report — `today`, `week`, or `all` |
 
 ### GPT / Codex _(optional)_
 
@@ -129,58 +180,43 @@ Then restart the bot. The installer does not need to be re-run unless the hooks 
 | `/gpt <message> [project] [model]` | Start an OpenAI Codex session |
 | `/gpt-project` | List registered GPT projects |
 
-Requires the `codex` CLI (`npm install -g @openai/codex`) and an OpenAI API key. These commands have no effect on Claude features if unused.
+Requires `codex` CLI and OpenAI API key. No effect on Claude features if unused.
 
 ---
 
 ## Configuration
 
-`~/.claude-tracker/config.json` — created by `install.sh`, edit at any time:
+`~/.claude-tracker/config.json` — created by `install.sh`:
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `bot_token` | — | Discord bot token (required) |
-| `default_cwd` | `$HOME` | Default working directory for Claude sessions |
-| `allowed_users` | `[]` | Discord user IDs allowed to send commands (empty = all) |
+| `default_cwd` | `$HOME` | Default working directory for sessions |
+| `allowed_users` | `[]` | Discord user IDs allowed to use commands (empty = all) |
 | `session_timeout_minutes` | `60` | Idle session auto-cleanup threshold |
-| `stream_edit_interval_ms` | `2000` | How often streaming responses are edited in Discord |
-| `max_context_history_turns` | `4` | Turns of history included in each Claude request |
-| `max_context_chars` | `50000` | Max character size of context history |
-
-See `config.example.json` for the full schema with comments.
+| `stream_edit_interval_ms` | `2000` | Streaming response edit frequency |
+| `max_context_history_turns` | `4` | History turns included per request |
+| `max_context_chars` | `50000` | Max context history size |
 
 ---
 
-## GPT Projects
-
-Register a local project directory for use with `/gpt`:
+## Updating
 
 ```bash
-node register-gpt-project.js my-app "C:\Users\YourName\Projects\my-app"
+git pull
 ```
 
-Or copy `gpt-projects.example.md` to `gpt-projects.md` and edit manually.
+Then restart the bot. Re-run `install.sh` only if hooks or config format changed.
 
-`gpt-projects.md` is gitignored — it contains your local paths and is never committed.
-
----
-
-## Hook Flow
-
-```
-SessionStart       → register session as active  + Discord notification
-UserPromptSubmit   → idle → active transition
-Stop               → active → idle               + debounced completion notification
-SessionEnd         → remove session              + record token stats
-```
+> Use `git clone` to install — not the zip download — so you can pull updates.
 
 ---
 
 ## Persistent Sessions
 
-Bot sessions survive restarts. On startup, the bot reloads all active sessions from `~/.claude-tracker/bot-sessions/` and reconnects to their Discord threads.
+Sessions survive bot restarts. On startup, the bot reloads all active sessions from `~/.claude-tracker/bot-sessions/` and reconnects to their Discord threads.
 
-Sessions with a Claude session ID support `--resume` so conversation context is preserved across bot restarts.
+Sessions with a Claude session ID support `--resume`, preserving full conversation context across restarts.
 
 Ended sessions are kept for 10 days, then automatically purged along with their Discord thread messages.
 
@@ -189,51 +225,71 @@ Ended sessions are kept for 10 days, then automatically purged along with their 
 ## File Structure
 
 ```
-install.sh                  Installer (Windows / Git Bash)
-claude-tracker.sh           claude-tracker bash script (copied to ~/.claude-tracker/bin/)
-hooks-settings.json         Claude Code hooks template used by install.sh
-bot.js                      Bot entry point — Discord client, timers, graceful shutdown
-register-gpt-project.js     CLI tool to register a GPT/Codex project
-start-bot.vbs               Windows background launcher (no terminal window)
-config.example.json         Config schema reference
-gpt-projects.example.md     GPT project registry example
+install.sh                  Installer (Git Bash)
+claude-tracker.sh           Hook script (→ ~/.claude-tracker/bin/)
+bot.js                      Discord bot entry point
+start-bot.vbs               Background launcher (no terminal)
+config.example.json         Config reference
 
 src/
   config.js                 Config loader (TTL cache + hot-reload)
-  constants.js              Shared constants — paths, limits, colors
-  state.js                  In-memory state (activeSessions, Discord client)
-  session.js                Session CRUD, message history, token stats, queue
-  claude.js                 Claude CLI spawn, streaming parser, turn runner
-  tracker.js                claude-tracker integration + native process scan
-  dashboard.js              /status, /report, /dashboard, auto-refresh
+  constants.js              Paths, limits, colors
+  state.js                  In-memory state
+  session.js                Session CRUD, history, tokens, queue
+  claude.js                 CLI spawn, streaming, turn runner
+  tracker.js                Hook integration + process scan
+  dashboard.js              /status, /report, /dashboard
   embeds.js                 Discord embed builders
-  files.js                  File/image attachment handling
+  files.js                  File/image handling
   commands.js               Slash command definitions
-  timers.js                 Periodic timers (dashboard refresh, session cleanup)
+  timers.js                 Periodic timers
   handlers/
-    interactions.js         Dispatcher — slash commands, buttons, modals, select menus
+    interactions.js         Command dispatcher
     send.js                 /send handler
-    sessions.js             /end, /session, /sessions, terminateSession
+    sessions.js             /end, /session, /sessions
     project.js              /project handler
-    message.js              Plain message handler (follow-up in active sessions)
-    buttons.js              All button interaction handlers
-    modals.js               Modal submit handlers
-    gpt.js                  /gpt and /gpt-project handlers
-
-~/.claude-tracker/          Created by install.sh (not in repo)
-  bin/claude-tracker        Installed tracker binary
-  config.json               Your configuration
-  state.json                Live session state
-  bot-sessions/             Persisted bot sessions (one JSON file per session)
-  token-history.jsonl       Token usage snapshots
-  usage.jsonl               Per-session token records
-  failed-prompts.jsonl      Failed send log (for debugging)
+    message.js              Follow-up message handler
+    buttons.js              Button interactions
+    modals.js               Modal submissions
+    gpt.js                  /gpt handlers
 ```
+
+---
+
+## Security
+
+> **The bot runs Claude with `--dangerously-skip-permissions`**, giving Claude full read/write access to your machine.
+
+- By default (`allowed_users: []`), anyone in your Discord server can send commands
+- Set `allowed_users` to trusted Discord user IDs, or keep the bot in a **private server**
+- The bot never exposes or transmits your Claude credentials
+
+---
+
+## Platform Support
+
+> **Windows only** (Git Bash required). The session tracking relies on Windows-specific process detection (`tasklist`, `claude.exe`) and has not been ported to macOS or Linux.
+
+> **Not fully tested.** Use at your own risk. Review the code before running in a critical environment.
 
 ---
 
 ## Dependencies
 
 - [`discord.js`](https://discord.js.org/) ^14 — Discord API
-- `claude` CLI — Claude Code, must be in PATH
-- `bash`, `jq`, `curl` — required by `claude-tracker`
+- `claude` CLI — Claude Code (must be in PATH)
+- `bash 4+`, `jq`, `curl` — required by `claude-tracker`
+
+---
+
+## License
+
+MIT
+
+---
+
+<div align="center">
+
+**Claude Pilot** is an independent community project and is not affiliated with or endorsed by Anthropic.
+
+</div>

@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0a2e"/>
+      <stop offset="50%" style="stop-color:#1a1145"/>
+      <stop offset="100%" style="stop-color:#2d1b69"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#5865F2"/>
+      <stop offset="100%" style="stop-color:#d4a574"/>
+    </linearGradient>
+    <linearGradient id="line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#5865F2;stop-opacity:0.8"/>
+      <stop offset="50%" style="stop-color:#8b7fd4;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#d4a574;stop-opacity:0.8"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="soft-glow">
+      <feGaussianBlur stdDeviation="20" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="400" fill="url(#bg)"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.04">
+    <line x1="0" y1="0" x2="0" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="80" y1="0" x2="80" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="160" y1="0" x2="160" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="240" y1="0" x2="240" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="320" y1="0" x2="320" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="400" y1="0" x2="400" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="480" y1="0" x2="480" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="560" y1="0" x2="560" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="640" y1="0" x2="640" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="720" y1="0" x2="720" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="800" y1="0" x2="800" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="880" y1="0" x2="880" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="960" y1="0" x2="960" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="1040" y1="0" x2="1040" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="1120" y1="0" x2="1120" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="1200" y1="0" x2="1200" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="1280" y1="0" x2="1280" y2="400" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="80" x2="1280" y2="80" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="160" x2="1280" y2="160" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="240" x2="1280" y2="240" stroke="white" stroke-width="1"/>
+    <line x1="0" y1="320" x2="1280" y2="320" stroke="white" stroke-width="1"/>
+  </g>
+
+  <!-- Decorative circles -->
+  <circle cx="200" cy="200" r="120" fill="none" stroke="#5865F2" stroke-width="1" opacity="0.08"/>
+  <circle cx="200" cy="200" r="80" fill="none" stroke="#5865F2" stroke-width="1" opacity="0.12"/>
+  <circle cx="1080" cy="200" r="120" fill="none" stroke="#d4a574" stroke-width="1" opacity="0.08"/>
+  <circle cx="1080" cy="200" r="80" fill="none" stroke="#d4a574" stroke-width="1" opacity="0.12"/>
+
+  <!-- Connection line between Discord and Claude -->
+  <line x1="280" y1="200" x2="1000" y2="200" stroke="url(#line-grad)" stroke-width="2" stroke-dasharray="8,6" filter="url(#glow)"/>
+
+  <!-- Discord icon circle -->
+  <circle cx="200" cy="200" r="50" fill="#5865F2" opacity="0.15"/>
+  <circle cx="200" cy="200" r="50" fill="none" stroke="#5865F2" stroke-width="2" opacity="0.6"/>
+  <!-- Simplified Discord logo -->
+  <g transform="translate(200,200)" fill="white" opacity="0.9">
+    <path d="M-18,-10 C-18,-10 -14,-15 -5,-16 C-5,-16 -6,-14 -6,-12 C-3,-12.5 0,-12.5 3,-12.5 C6,-12.5 9,-12 12,-12 C12,-14 11,-16 11,-16 C20,-15 24,-10 24,-10 C24,5 18,16 5,18 C5,18 3,15 2,13 C6,12 8,10 8,10 C6,11 4,12 2,12.5 C-1,13.5 -4,13.5 -7,12.5 C-9,12 -11,11 -12,10 C-12,10 -10,12 -6,13 C-7,15 -9,18 -9,18 C-22,16 -28,5 -28,-10 Z"/>
+    <circle cx="-7" cy="2" r="4" fill="#5865F2"/>
+    <circle cx="9" cy="2" r="4" fill="#5865F2"/>
+  </g>
+
+  <!-- Claude icon circle -->
+  <circle cx="1080" cy="200" r="50" fill="#d4a574" opacity="0.15"/>
+  <circle cx="1080" cy="200" r="50" fill="none" stroke="#d4a574" stroke-width="2" opacity="0.6"/>
+  <!-- Simplified Claude sparkle/logo -->
+  <g transform="translate(1080,200)" fill="#d4a574" opacity="0.9">
+    <circle cx="0" cy="0" r="6" fill="#d4a574"/>
+    <ellipse cx="0" cy="-18" rx="3" ry="10" fill="#d4a574"/>
+    <ellipse cx="0" cy="18" rx="3" ry="10" fill="#d4a574"/>
+    <ellipse cx="-18" cy="0" rx="10" ry="3" fill="#d4a574"/>
+    <ellipse cx="18" cy="0" rx="10" ry="3" fill="#d4a574"/>
+    <ellipse cx="-13" cy="-13" rx="3" ry="8" fill="#d4a574" transform="rotate(-45,-13,-13)"/>
+    <ellipse cx="13" cy="-13" rx="3" ry="8" fill="#d4a574" transform="rotate(45,13,-13)"/>
+    <ellipse cx="-13" cy="13" rx="3" ry="8" fill="#d4a574" transform="rotate(45,-13,13)"/>
+    <ellipse cx="13" cy="13" rx="3" ry="8" fill="#d4a574" transform="rotate(-45,13,13)"/>
+  </g>
+
+  <!-- Data flow dots on the connection line -->
+  <circle cx="380" cy="200" r="3" fill="#5865F2" opacity="0.6"/>
+  <circle cx="480" cy="200" r="3" fill="#7b6fe0" opacity="0.5"/>
+  <circle cx="580" cy="200" r="3" fill="#9080c8" opacity="0.4"/>
+  <circle cx="680" cy="200" r="3" fill="#a591b4" opacity="0.4"/>
+  <circle cx="780" cy="200" r="3" fill="#b9a29c" opacity="0.5"/>
+  <circle cx="880" cy="200" r="3" fill="#d4a574" opacity="0.6"/>
+
+  <!-- Main title -->
+  <text x="640" y="170" text-anchor="middle" font-family="'Segoe UI', 'SF Pro Display', -apple-system, sans-serif" font-size="64" font-weight="700" fill="white" letter-spacing="2" filter="url(#glow)">Claude Pilot</text>
+
+  <!-- Subtitle -->
+  <text x="640" y="220" text-anchor="middle" font-family="'Segoe UI', 'SF Pro Display', -apple-system, sans-serif" font-size="22" fill="white" opacity="0.7" letter-spacing="4" font-weight="300">CONTROL CLAUDE CODE FROM DISCORD</text>
+
+  <!-- Tagline -->
+  <text x="640" y="260" text-anchor="middle" font-family="'Segoe UI', 'SF Pro Display', -apple-system, sans-serif" font-size="15" fill="white" opacity="0.4" letter-spacing="1">Send prompts, monitor sessions, track tokens — from any device</text>
+
+  <!-- Bottom accent line -->
+  <rect x="240" y="380" width="800" height="2" fill="url(#accent)" rx="1" opacity="0.3"/>
+</svg>
