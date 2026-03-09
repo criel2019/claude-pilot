@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -8,6 +8,22 @@ import { BOT_DIR, COLOR, THREAD_AUTO_ARCHIVE, THREAD_NAME_MAX } from '../constan
 const CODEX_TIMEOUT = 60 * 60 * 1000;
 const CLAUDE_REWRITE_TIMEOUT = 5 * 60_000;
 const GPT_PROJECTS_FILE = join(BOT_DIR, 'gpt-projects.md');
+
+function resolveClaudeBin() {
+  const cliRelative = join('node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+  try {
+    const prefix = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    const cliJs = join(prefix, '@anthropic-ai', 'claude-code', 'cli.js');
+    if (existsSync(cliJs)) return { cmd: process.execPath, prefix: [cliJs] };
+  } catch {}
+  if (process.env.APPDATA) {
+    const cliJs = join(process.env.APPDATA, 'npm', cliRelative);
+    if (existsSync(cliJs)) return { cmd: process.execPath, prefix: [cliJs] };
+  }
+  return { cmd: 'claude', prefix: [], shell: true };
+}
+
+const CLAUDE_BIN = resolveClaudeBin();
 
 function buildGptButtons(threadId) {
   return new ActionRowBuilder().addComponents(
@@ -54,7 +70,8 @@ function rewriteWithClaude(userMessage) {
       userMessage,
     ].join('\n');
 
-    const proc = spawn('claude', [
+    const proc = spawn(CLAUDE_BIN.cmd, [
+      ...CLAUDE_BIN.prefix,
       '-p', prompt,
       '--output-format', 'stream-json',
       '--include-partial-messages',
@@ -64,7 +81,7 @@ function rewriteWithClaude(userMessage) {
     ], {
       env: { ...process.env, CLAUDECODE: '', TERM: 'dumb', NO_COLOR: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
+      shell: CLAUDE_BIN.shell || false,
     });
 
     let finalResult = '';

@@ -1,10 +1,35 @@
-import { spawn } from 'child_process';
-import { readFileSync } from 'fs';
+import { spawn, execSync } from 'child_process';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import {
   SEND_TIMEOUT, THREAD_NAME_MAX, THREAD_AUTO_ARCHIVE,
   EMBED_MAX_CHARS, EMBED_TRIM_CHARS, BOT_DIR,
 } from './constants.js';
+
+// Resolve the claude CLI entry point for shell-free spawning on Windows.
+// npm global shims (.cmd) don't work with shell:false, so we locate the
+// actual JS entry and invoke it via node directly.
+function resolveClaudeBin() {
+  const cliRelative = join('node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+
+  // 1. Try npm global prefix (works for default npm, nvm, custom prefix)
+  try {
+    const prefix = execSync('npm root -g', { encoding: 'utf8' }).trim();
+    const cliJs = join(prefix, '@anthropic-ai', 'claude-code', 'cli.js');
+    if (existsSync(cliJs)) return { cmd: process.execPath, prefix: [cliJs] };
+  } catch {}
+
+  // 2. Try APPDATA/npm (Windows default)
+  if (process.env.APPDATA) {
+    const cliJs = join(process.env.APPDATA, 'npm', cliRelative);
+    if (existsSync(cliJs)) return { cmd: process.execPath, prefix: [cliJs] };
+  }
+
+  // 3. Fallback: use shell to let OS resolve claude
+  return { cmd: 'claude', prefix: [], shell: true };
+}
+
+const CLAUDE_BIN = resolveClaudeBin();
 import { getConfig } from './config.js';
 import { pushHistory, updateTokenStats, saveSession, recordErrorInHistory } from './session.js';
 import { cleanupTempFiles } from './files.js';
@@ -138,11 +163,11 @@ export function executeClaudeTurn({ session, userText, onUpdate, timeout = SEND_
     '--append-system-prompt', systemPrompt,
   );
 
-  const proc = spawn('claude', args, {
+  const proc = spawn(CLAUDE_BIN.cmd, [...CLAUDE_BIN.prefix, ...args], {
     cwd: session.cwd,
     env: { ...process.env, CLAUDECODE: '', TERM: 'dumb', NO_COLOR: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
-    shell: false,
+    shell: CLAUDE_BIN.shell || false,
   });
   session.proc = proc;
 
