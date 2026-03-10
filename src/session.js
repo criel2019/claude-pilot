@@ -100,6 +100,7 @@ export function createSessionObject({ channelId, channelName, projectName, cwd, 
     endedAt: null,
     turnCount: 0,
     messageHistory: [],
+    modifiedFiles: new Set(), // Edit/Write 툴 콜로 수정된 파일 경로 추적
     tokenStats: { totalHistoryChars: 0, lastContextChars: 0, warningLevel: 'safe' },
     threadRef: null,
     starterMessageRef: null,

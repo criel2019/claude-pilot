@@ -83,4 +83,15 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('gpt-project')
     .setDescription('List registered GPT Codex projects'),
+
+  new SlashCommandBuilder()
+    .setName('file')
+    .setDescription('Send a file from this PC to Discord (PC → mobile)')
+    .addStringOption(o => o.setName('path').setDescription('Absolute or relative path on PC').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('receive')
+    .setDescription('Save a Discord file to this PC (mobile → PC)')
+    .addAttachmentOption(o => o.setName('file').setDescription('File to save').setRequired(true))
+    .addStringOption(o => o.setName('folder').setDescription('Optional subfolder inside discord-received/').setRequired(false)),
 ];

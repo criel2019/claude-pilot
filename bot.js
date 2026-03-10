@@ -1,6 +1,15 @@
 import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
 import { mkdirSync } from 'fs';
+import { execSync } from 'child_process';
 import { SESSIONS_DIR } from './src/constants.js';
+
+// Kill any existing bot.js instances before starting (prevents duplicate bots)
+try {
+  execSync(
+    `powershell -Command "Get-CimInstance Win32_Process -Filter \\"name='node.exe'\\" | Where-Object { $_.CommandLine -like '*bot.js*' -and $_.ProcessId -ne ${process.pid} } | ForEach-Object { Write-Host \\"[startup] Killed existing bot PID $($_.ProcessId)\\"; Stop-Process -Id $_.ProcessId -Force }"`,
+    { stdio: 'inherit' }
+  );
+} catch {}
 import { BOT_TOKEN } from './src/config.js';
 import { activeSessions, setClient } from './src/state.js';
 import { commands } from './src/commands.js';

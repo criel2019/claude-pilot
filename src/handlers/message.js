@@ -1,10 +1,11 @@
-import { TEXT_EXTENSIONS } from '../constants.js';
+import { TEXT_EXTENSIONS, RECEIVED_DIR } from '../constants.js';
 import { isUserAllowed } from '../config.js';
 import { activeSessions, getClient } from '../state.js';
 import { isSessionBusy, enqueueMessage, recordErrorInHistory } from '../session.js';
 import {
   isImageFile, fetchTextFile, prepareImageAttachments,
-  buildImagePrompt, cleanupTempFiles,
+  buildImagePrompt, cleanupTempFiles, downloadAnyAttachment,
+  parseDestDir, isPureSaveText,
 } from '../files.js';
 import { runTurnAndUpdateThread, makeProgressUpdater, drainQueue } from '../claude.js';
 import { buildErrorEmbed } from '../embeds.js';
@@ -30,13 +31,20 @@ async function buildFollowUpPayload(message) {
   const rawText = message.content.trim()
     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
 
+  // Detect natural-language save destination in the message text
+  const destDir = parseDestDir(rawText);
+
   const imageAtts = [...message.attachments.filter(a => isImageFile(a.name)).values()];
   const textAtts = [...message.attachments.filter(a => {
     const ext = (a.name.split('.').pop() || '').toLowerCase();
     return TEXT_EXTENSIONS.has(ext);
   }).values()];
+  const binaryAtts = [...message.attachments.filter(a => {
+    const ext = (a.name.split('.').pop() || '').toLowerCase();
+    return !isImageFile(a.name) && !TEXT_EXTENSIONS.has(ext);
+  }).values()];
 
-  if (!rawText && imageAtts.length === 0 && textAtts.length === 0) return null;
+  if (!rawText && imageAtts.length === 0 && textAtts.length === 0 && binaryAtts.length === 0) return null;
 
   // Read text file attachments
   let textFileContent = '';
@@ -51,11 +59,28 @@ async function buildFollowUpPayload(message) {
     }
   }
 
-  const combinedText = [rawText, textFileContent].filter(Boolean).join('\n\n---\n\n');
+  // Download binary file attachments — use destDir if the user specified one, else RECEIVED_DIR
+  const saveDir = destDir || RECEIVED_DIR;
+  let binaryFileContext = '';
+  let binaryFileLabel = '';
+  for (const att of binaryAtts) {
+    try {
+      const savedPath = await downloadAnyAttachment(att, saveDir);
+      binaryFileContext += `\n[File received and saved to PC: ${savedPath}]`;
+      binaryFileLabel += (binaryFileLabel ? ', ' : '') + `📥 ${att.name}`;
+    } catch (e) {
+      console.warn('[follow-up] Failed to save binary file:', e.message);
+      binaryFileContext += `\n[File download failed: ${att.name} — ${e.message}]`;
+      binaryFileLabel += (binaryFileLabel ? ', ' : '') + `❌ ${att.name}`;
+    }
+  }
+
+  const combinedText = [rawText, textFileContent, binaryFileContext].filter(Boolean).join('\n\n---\n\n');
   if (!combinedText && imageAtts.length === 0) return null;
 
   const imagePaths = await prepareImageAttachments(imageAtts);
-  const baseDisplay = textFileLabel ? (rawText ? `${rawText}\n${textFileLabel}` : textFileLabel) : undefined;
+  const allLabels = [textFileLabel, binaryFileLabel].filter(Boolean).join(', ');
+  const baseDisplay = allLabels ? (rawText ? `${rawText}\n${allLabels}` : allLabels) : undefined;
   const { promptText, displayText } = buildImagePrompt(combinedText || rawText, imagePaths, baseDisplay);
 
   const finalText = (imagePaths.length > 0 || textFileContent)
@@ -67,8 +92,41 @@ async function buildFollowUpPayload(message) {
   return { promptText: finalText, displayText, imagePaths };
 }
 
+// Handles "바탕화면에 저장해줘" / "save to E:/foo" style messages directly,
+// without involving a Claude session.
+async function handleDirectFileSave(message, destDir) {
+  await message.react('🔄').catch(() => {});
+  const results = [];
+  for (const att of message.attachments.values()) {
+    try {
+      const savedPath = await downloadAnyAttachment(att, destDir);
+      results.push(`✅ \`${att.name}\` → \`${savedPath}\``);
+    } catch (e) {
+      results.push(`❌ \`${att.name}\`: ${e.message.slice(0, 120)}`);
+    }
+  }
+  await message.reactions.removeAll().catch(() => {});
+  const allOk = results.every(r => r.startsWith('✅'));
+  await message.react(allOk ? '✅' : '⚠️').catch(() => {});
+  await message.reply({
+    content: `📥 **저장 완료** (\`${destDir}\`)\n${results.join('\n')}`,
+  }).catch(() => {});
+}
+
 export async function handleMessageCreate(message) {
   if (message.author.bot || !message.guild) return;
+
+  // Direct file-save: handle outside (or inside) sessions when the entire
+  // message is a "save this to <location>" command.
+  if (message.attachments.size > 0 && isUserAllowed(message.author.id)) {
+    const client = getClient();
+    const rawText = message.content.trim()
+      .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
+    const destDir = parseDestDir(rawText);
+    if (destDir && isPureSaveText(rawText)) {
+      return handleDirectFileSave(message, destDir);
+    }
+  }
 
   // Route messages from GPT threads to the GPT handler
   if (message.channel.isThread()) {

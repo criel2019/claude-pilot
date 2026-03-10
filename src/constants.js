@@ -41,5 +41,14 @@ export const MAX_FAILED_PROMPTS  = 20;
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
 export const TEXT_EXTENSIONS  = new Set(['txt', 'md', 'json', 'js', 'ts', 'py', 'css', 'html', 'sh', 'yaml', 'yml', 'log']);
 export const MAX_IMAGE_SIZE   = 10 * 1024 * 1024; // 10 MB
+export const MAX_UPLOAD_SIZE  = 24 * 1024 * 1024; // 24 MB (Discord bot limit)
+
+export const RECEIVED_DIR = process.env.CLAUDE_RECEIVED_DIR || 'E:/discord-received';
+
+// Directories Claude is allowed to send files from via [SEND_FILE:/path]
+export const ALLOWED_SEND_ROOTS = [
+  (process.env.USERPROFILE || process.env.HOME || '').replace(/\\/g, '/'),
+  'E:/',
+].filter(s => s.length > 2);
 
 export const QUEUE_MAX_SIZE = 5;

@@ -1,9 +1,11 @@
 import { spawn, execSync } from 'child_process';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync, statSync } from 'fs';
+import { join, basename, resolve } from 'path';
+import { AttachmentBuilder } from 'discord.js';
 import {
   SEND_TIMEOUT, THREAD_NAME_MAX, THREAD_AUTO_ARCHIVE,
   EMBED_MAX_CHARS, EMBED_TRIM_CHARS, BOT_DIR,
+  MAX_UPLOAD_SIZE, ALLOWED_SEND_ROOTS,
 } from './constants.js';
 
 // Resolve the claude CLI entry point for shell-free spawning on Windows.
@@ -29,7 +31,7 @@ function resolveClaudeBin() {
   return { cmd: 'claude', prefix: [], shell: true };
 }
 
-const CLAUDE_BIN = resolveClaudeBin();
+export const CLAUDE_BIN = resolveClaudeBin();
 import { getConfig } from './config.js';
 import { pushHistory, updateTokenStats, saveSession, recordErrorInHistory } from './session.js';
 import { cleanupTempFiles } from './files.js';
@@ -38,6 +40,34 @@ import {
   buildTurnHistoryEmbed, buildSessionButtons,
   buildProgressButtons, buildErrorEmbed, buildRetryButton,
 } from './embeds.js';
+
+// ── File send marker parser ──
+// Claude includes [SEND_FILE:/path] in its response to trigger a Discord file upload.
+
+const SENSITIVE_FILENAME_RE = /\.(env|pem|key|pfx|p12)$|^(id_rsa|id_ed25519|\.ssh|SAM|SYSTEM|NTDS\.dit)$/i;
+
+function isSafeFilePath(fp, sessionCwd) {
+  const normalized = resolve(fp).replace(/\\/g, '/');
+  const allowedRoots = sessionCwd
+    ? [...ALLOWED_SEND_ROOTS, sessionCwd.replace(/\\/g, '/')]
+    : ALLOWED_SEND_ROOTS;
+  const underAllowedRoot = allowedRoots.some(root =>
+    normalized.toLowerCase().startsWith(root.toLowerCase())
+  );
+  if (!underAllowedRoot) return { ok: false, reason: '허용되지 않은 경로' };
+  if (SENSITIVE_FILENAME_RE.test(basename(normalized))) return { ok: false, reason: '민감한 파일' };
+  return { ok: true };
+}
+
+function extractFileSendRequests(text) {
+  // Exclude newlines from path to prevent multi-line injection
+  const pattern = /\[SEND_FILE:([^\]\r\n]+)\]/g;
+  const paths = [];
+  let match;
+  while ((match = pattern.exec(text)) !== null) paths.push(match[1].trim());
+  const cleanedText = text.replace(/\[SEND_FILE:[^\]\r\n]+\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { paths, cleanedText };
+}
 
 // ── Context builder ──
 // Constructs a conversation history block injected as context into each Claude turn.
@@ -142,7 +172,8 @@ export function executeClaudeTurn({ session, userText, onUpdate, timeout = SEND_
     '- If you have questions, list them clearly in your text response. The user will answer in the next message.',
     '- If you want to show a plan, write it directly in your text response.',
     '- Always work autonomously and make reasonable default decisions when possible.',
-  ].join(' ');
+    '- To send a file to the user via Discord, include [SEND_FILE:/absolute/path/to/file] anywhere in your response. Multiple markers are allowed. The bot will attach the files automatically.',
+  ].join('\n');
 
   const projectList = readProjectList();
   const systemPrompt = projectList
@@ -190,7 +221,14 @@ export function executeClaudeTurn({ session, userText, onUpdate, timeout = SEND_
       let text = '';
       for (const block of event.message.content) {
         if (block.type === 'text') text += block.text;
-        else if (block.type === 'tool_use') toolStatus = `🔧 _${block.name}_ running...`;
+        else if (block.type === 'tool_use') {
+          toolStatus = `🔧 _${block.name}_ running...`;
+          // Edit/Write 툴에서 수정된 파일 경로 추적
+          const fp = block.input?.file_path ?? block.input?.path;
+          if (fp && /Edit|Write|MultiEdit|NotebookEdit/.test(block.name)) {
+            session.modifiedFiles?.add(fp);
+          }
+        }
       }
       if (text) displayBuffer = text;
       // Clear tool status when the last block is not a tool_use
@@ -391,6 +429,12 @@ export async function runTurnAndUpdateThread({ session, userText, userDisplayTex
   });
 
   session.turnCount++;
+
+  // Extract [SEND_FILE:/path] markers before storing history or displaying (always clean both)
+  const { paths: sendFilePaths, cleanedText: cleanedDisplay } = extractFileSendRequests(result.displayText);
+  result.displayText = cleanedDisplay;
+  result.historyText = extractFileSendRequests(result.historyText).cleanedText;
+
   pushHistory(session, 'assistant', result.historyText);
   updateTokenStats(session);
 
@@ -429,6 +473,42 @@ export async function runTurnAndUpdateThread({ session, userText, userDisplayTex
       session.lastThreadButtonMsg = threadMsg;
     } catch (e) {
       console.warn('[turn] Failed to post thread history:', e.message);
+    }
+  }
+
+  // Send files requested via [SEND_FILE:/path] markers
+  if (sendFilePaths.length > 0 && session.threadRef) {
+    const validFiles = [];
+    const errors = [];
+    for (const fp of sendFilePaths) {
+      const safety = isSafeFilePath(fp, session.cwd);
+      if (!safety.ok) { errors.push(`❌ \`${basename(fp)}\`: ${safety.reason}`); continue; }
+      try {
+        if (!existsSync(fp)) { errors.push(`❌ \`${basename(fp)}\`: 파일 없음`); continue; }
+        const size = statSync(fp).size;
+        if (size > MAX_UPLOAD_SIZE) {
+          errors.push(`❌ \`${basename(fp)}\`: 너무 큼 (${(size / 1024 / 1024).toFixed(1)}MB, 최대 24MB)`);
+          continue;
+        }
+        validFiles.push(fp);
+      } catch (e) {
+        errors.push(`❌ \`${basename(fp)}\`: 읽기 실패 (${e.message})`);
+      }
+    }
+    const MAX_FILES = 10;
+    const filesToSend = validFiles.slice(0, MAX_FILES);
+    const overflow = validFiles.length - filesToSend.length;
+    try {
+      if (filesToSend.length > 0) {
+        const overflowNote = overflow > 0 ? ` (+${overflow}개 초과, 생략됨)` : '';
+        await session.threadRef.send({
+          content: `📤 ${filesToSend.map(fp => `\`${basename(fp)}\``).join(', ')}${overflowNote}`,
+          files: filesToSend.map(fp => new AttachmentBuilder(fp)),
+        });
+      }
+      if (errors.length > 0) await session.threadRef.send({ content: errors.join('\n') });
+    } catch (e) {
+      console.warn('[file-send] Failed to send file(s):', e.message);
     }
   }
 

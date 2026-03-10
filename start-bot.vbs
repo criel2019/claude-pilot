@@ -12,6 +12,18 @@ WshShell.Run "node bot.js", 0, False
 
 ' Start claude-tracker monitor (process scan, token stats, idle alerts)
 ' Requires: claude-tracker installed via install.sh
-Dim trackerPath
+Dim trackerPath, bashPath
 trackerPath = WshShell.ExpandEnvironmentStrings("%USERPROFILE%") & "\.claude-tracker\bin\claude-tracker"
-WshShell.Run "bash """ & trackerPath & """ monitor 60", 0, False
+
+' Resolve bash.exe — prefer Git Bash, fall back to WSL bash
+If fso.FileExists("C:\Program Files\Git\bin\bash.exe") Then
+    bashPath = "C:\Program Files\Git\bin\bash.exe"
+ElseIf fso.FileExists("C:\Windows\System32\bash.exe") Then
+    bashPath = "C:\Windows\System32\bash.exe"
+Else
+    bashPath = "bash"
+End If
+
+If fso.FileExists(trackerPath) Then
+    WshShell.Run """" & bashPath & """ """ & trackerPath & """ monitor 60", 0, False
+End If

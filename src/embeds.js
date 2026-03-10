@@ -94,6 +94,10 @@ export function buildSessionButtons(channelId) {
       .setLabel('🗑 Clear History')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId(`review_start:${channelId}`)
+      .setLabel('📋 코드 리뷰')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
       .setCustomId(`session_end:${channelId}`)
       .setLabel('🔚 End Session')
       .setStyle(ButtonStyle.Danger),

@@ -21,6 +21,7 @@ import {
 } from '../claude.js';
 import { handleSend } from './send.js';
 import { handleProject } from './project.js';
+import { handleFile, handleReceive } from './filetransfer.js';
 import { terminateSession, handleEnd, handleSession, handleSessions } from './sessions.js';
 import { handleGpt, handleGptProject, getGptProjects } from './gpt.js';
 import { handleButton } from './buttons.js';
@@ -243,19 +244,37 @@ export async function handleInteractionCreate(interaction) {
 
   if (interaction.isButton()) {
     try { await handleButton(interaction); }
-    catch (e) { console.error('Button handler error:', e.message); }
+    catch (e) {
+      console.error('Button handler error:', e.message);
+      try {
+        if (!interaction.replied && !interaction.deferred)
+          await interaction.reply({ content: `❌ 오류: ${e.message.slice(0, 200)}`, ephemeral: true });
+      } catch {}
+    }
     return;
   }
 
   if (interaction.isStringSelectMenu()) {
     try { await handleSelectMenu(interaction); }
-    catch (e) { console.error('Select menu handler error:', e.message); }
+    catch (e) {
+      console.error('Select menu handler error:', e.message);
+      try {
+        if (!interaction.replied && !interaction.deferred)
+          await interaction.reply({ content: `❌ 오류: ${e.message.slice(0, 200)}`, ephemeral: true });
+      } catch {}
+    }
     return;
   }
 
   if (interaction.isModalSubmit()) {
     try { await handleModalSubmit(interaction); }
-    catch (e) { console.error('Modal handler error:', e.message); }
+    catch (e) {
+      console.error('Modal handler error:', e.message);
+      try {
+        if (!interaction.replied && !interaction.deferred)
+          await interaction.reply({ content: `❌ 오류: ${e.message.slice(0, 200)}`, ephemeral: true });
+      } catch {}
+    }
     return;
   }
 
@@ -268,7 +287,10 @@ export async function handleInteractionCreate(interaction) {
         await interaction.deferReply();
         await interaction.editReply(await handleStatus());
         break;
-      case 'snapshot': await interaction.reply(await handleSnapshot()); break;
+      case 'snapshot':
+        await interaction.deferReply({ ephemeral: true });
+        await interaction.editReply(await handleSnapshot());
+        break;
       case 'report':
         await interaction.deferReply();
         await interaction.editReply(handleReport(interaction.options.getString('period') || 'today'));
@@ -286,6 +308,8 @@ export async function handleInteractionCreate(interaction) {
       case 'sessions': await handleSessions(interaction); break;
       case 'gpt':         await handleGpt(interaction); break;
       case 'gpt-project': await handleGptProject(interaction); break;
+      case 'file':        await handleFile(interaction); break;
+      case 'receive':     await handleReceive(interaction); break;
       default: await interaction.reply({ content: 'Unknown command.' });
     }
   } catch (e) {
