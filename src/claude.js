@@ -433,7 +433,7 @@ export async function runTurnAndUpdateThread({ session, userText, userDisplayTex
   // Extract [SEND_FILE:/path] markers before storing history or displaying (always clean both)
   const { paths: sendFilePaths, cleanedText: cleanedDisplay } = extractFileSendRequests(result.displayText);
   result.displayText = cleanedDisplay;
-  result.historyText = extractFileSendRequests(result.historyText).cleanedText;
+  result.historyText = extractFileSendRequests(result.historyText ?? '').cleanedText;
 
   pushHistory(session, 'assistant', result.historyText);
   updateTokenStats(session);
