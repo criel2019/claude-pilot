@@ -3,7 +3,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import {
   IMAGE_EXTENSIONS, MAX_IMAGE_SIZE, MAX_UPLOAD_SIZE, TEMP_DIR,
-  EMBED_MAX_CHARS, EMBED_TRIM_CHARS,
+  EMBED_MAX_CHARS, EMBED_TRIM_CHARS, RECEIVED_DIR,
 } from './constants.js';
 
 // ─── Natural-language destination parsing ────────────────────────────────────
@@ -33,6 +33,12 @@ export function parseDestDir(text) {
     return pathMatch[0].replace(/\\/g, '/').replace(/\/+$/, '');
   }
 
+  // "기본 폴더" / "기본으로" / "기본에" → RECEIVED_DIR (default receive location)
+  // 단순히 기본을 포함한 일반 문장(기본적으로, 기본 설정 등) 오탐 방지를 위해 위치 맥락 필수
+  if (/기본\s*(?:폴더|위치|경로|으로|에)/.test(lower)) {
+    return RECEIVED_DIR.replace(/\\/g, '/');
+  }
+
   // Named system-folder aliases
   if (USERPROFILE) {
     for (const { patterns, dirName } of DIR_ALIASES) {
@@ -52,7 +58,7 @@ export function parseDestDir(text) {
 export function isPureSaveText(text) {
   if (!text) return true;
   const stripped = text
-    .replace(/다운로드|바탕화면|데스크탑|문서 폴더|문서|사진 폴더|사진|음악 폴더|음악|동영상 폴더|동영상|비디오/g, '')
+    .replace(/기본 폴더|기본|다운로드|바탕화면|데스크탑|문서 폴더|문서|사진 폴더|사진|음악 폴더|음악|동영상 폴더|동영상|비디오/g, '')
     .replace(/저장|넣어|옮겨|이동|받아|해줘|해줘요|해주세요|부탁|폴더에|폴더로|에다가|에다|에|로|줘|해/g, '')
     .replace(/save|put|move|store|copy|please|here|folder|directory|to|in|into/gi, '')
     .replace(/[A-Za-z]:[\\/][^\s]*/g, '')   // strip explicit paths
@@ -76,7 +82,7 @@ export async function downloadAttachment(attachment) {
   const dot = attachment.name.lastIndexOf('.');
   const ext = dot !== -1 ? attachment.name.slice(dot) : '.bin';
   const filePath = join(TEMP_DIR, `${Date.now()}-${randomUUID().slice(0, 8)}${ext}`);
-  const res = await fetch(attachment.proxyURL || attachment.url);
+  const res = await fetch(attachment.url || attachment.proxyURL);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   writeFileSync(filePath, Buffer.from(await res.arrayBuffer()));
   return filePath;
@@ -98,7 +104,7 @@ export function trimEmbedText(text, fallback = '_(empty response)_') {
 
 // Fetches the content of a text file attachment
 export async function fetchTextFile(attachment) {
-  const res = await fetch(attachment.proxyURL || attachment.url);
+  const res = await fetch(attachment.url || attachment.proxyURL);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
 }
@@ -131,7 +137,7 @@ export async function downloadAnyAttachment(attachment, destDir) {
     filePath = join(destDir, `${base} (${counter})${ext}`);
     counter++;
   }
-  const res = await fetch(attachment.proxyURL || attachment.url);
+  const res = await fetch(attachment.url || attachment.proxyURL);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   writeFileSync(filePath, Buffer.from(await res.arrayBuffer()));
   return filePath;

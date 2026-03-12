@@ -26,13 +26,16 @@ function findSessionForMessage(message) {
   return { session, isThread: false };
 }
 
-async function buildFollowUpPayload(message) {
+// savedDir: handleMessageCreate에서 이미 저장한 경우 해당 경로를 전달.
+//   null이면 이 함수 내에서 직접 저장 수행.
+async function buildFollowUpPayload(message, savedDir = null) {
   const client = getClient();
   const rawText = message.content.trim()
     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
 
-  // Detect natural-language save destination in the message text
-  const destDir = parseDestDir(rawText);
+  // 이미 저장된 경우 재파싱 없이 savedDir 사용; 아니면 텍스트에서 파싱
+  const destDir = savedDir ?? parseDestDir(rawText);
+  const skipSave = savedDir !== null;
 
   const imageAtts = [...message.attachments.filter(a => isImageFile(a.name)).values()];
   const textAtts = [...message.attachments.filter(a => {
@@ -46,32 +49,45 @@ async function buildFollowUpPayload(message) {
 
   if (!rawText && imageAtts.length === 0 && textAtts.length === 0 && binaryAtts.length === 0) return null;
 
-  // Read text file attachments
+  // Read text file attachments — skipSave이면 이미 저장됐으므로 다운로드 생략
+  const saveDir = destDir || RECEIVED_DIR;
   let textFileContent = '';
   let textFileLabel = '';
   for (const att of textAtts) {
     try {
+      let savedPath = null;
+      if (!skipSave) {
+        savedPath = await downloadAnyAttachment(att, saveDir);
+      }
       const content = await fetchTextFile(att);
       textFileContent += (textFileContent ? '\n\n---\n\n' : '') + content;
-      textFileLabel += (textFileLabel ? ', ' : '') + `📄 ${att.name} (${content.length.toLocaleString()} chars)`;
+      const saveInfo = savedPath
+        ? ` → saved: ${savedPath}`
+        : (savedDir ? ` (saved to ${savedDir})` : '');
+      textFileLabel += (textFileLabel ? ', ' : '') + `📄 ${att.name} (${content.length.toLocaleString()} chars)${saveInfo}`;
     } catch (e) {
-      console.warn('[follow-up] Failed to read text file:', e.message);
+      console.warn('[follow-up] Failed to read/save text file:', e.message);
     }
   }
 
-  // Download binary file attachments — use destDir if the user specified one, else RECEIVED_DIR
-  const saveDir = destDir || RECEIVED_DIR;
+  // Download binary file attachments — skipSave이면 이미 저장됐으므로 다운로드 생략
   let binaryFileContext = '';
   let binaryFileLabel = '';
   for (const att of binaryAtts) {
-    try {
-      const savedPath = await downloadAnyAttachment(att, saveDir);
-      binaryFileContext += `\n[File received and saved to PC: ${savedPath}]`;
+    if (skipSave) {
+      const safeName = att.name.replace(/[\\/:*?"<>|]/g, '_');
+      binaryFileContext += `\n[File received and saved to PC: ${savedDir}/${safeName}]`;
       binaryFileLabel += (binaryFileLabel ? ', ' : '') + `📥 ${att.name}`;
-    } catch (e) {
-      console.warn('[follow-up] Failed to save binary file:', e.message);
-      binaryFileContext += `\n[File download failed: ${att.name} — ${e.message}]`;
-      binaryFileLabel += (binaryFileLabel ? ', ' : '') + `❌ ${att.name}`;
+    } else {
+      try {
+        const savedPath = await downloadAnyAttachment(att, saveDir);
+        binaryFileContext += `\n[File received and saved to PC: ${savedPath}]`;
+        binaryFileLabel += (binaryFileLabel ? ', ' : '') + `📥 ${att.name}`;
+      } catch (e) {
+        console.warn('[follow-up] Failed to save binary file:', e.message);
+        binaryFileContext += `\n[File download failed: ${att.name} — ${e.message}]`;
+        binaryFileLabel += (binaryFileLabel ? ', ' : '') + `❌ ${att.name}`;
+      }
     }
   }
 
@@ -94,14 +110,18 @@ async function buildFollowUpPayload(message) {
 
 // Handles "바탕화면에 저장해줘" / "save to E:/foo" style messages directly,
 // without involving a Claude session.
-async function handleDirectFileSave(message, destDir) {
+// attachmentList: optional array to limit which attachments to save (default: all)
+async function handleDirectFileSave(message, destDir, attachmentList = null) {
+  const atts = attachmentList ?? [...message.attachments.values()];
+  console.log(`[file-save] ${atts.length} attachment(s) → ${destDir}`);
   await message.react('🔄').catch(() => {});
   const results = [];
-  for (const att of message.attachments.values()) {
+  for (const att of atts) {
     try {
       const savedPath = await downloadAnyAttachment(att, destDir);
       results.push(`✅ \`${att.name}\` → \`${savedPath}\``);
     } catch (e) {
+      console.error(`[file-save] Failed to save ${att.name}:`, e.message);
       results.push(`❌ \`${att.name}\`: ${e.message.slice(0, 120)}`);
     }
   }
@@ -113,18 +133,38 @@ async function handleDirectFileSave(message, destDir) {
   }).catch(() => {});
 }
 
+// Auto-saves non-image file attachments to RECEIVED_DIR (no session / no destDir case)
+async function autoSaveAttachments(message) {
+  const nonImageAtts = [...message.attachments.values()].filter(a => !isImageFile(a.name));
+  if (nonImageAtts.length > 0) {
+    await handleDirectFileSave(message, RECEIVED_DIR, nonImageAtts);
+  }
+}
+
 export async function handleMessageCreate(message) {
   if (message.author.bot || !message.guild) return;
+  if (message.attachments.size > 0) {
+    console.log(`[msg] Attachments: ${[...message.attachments.values()].map(a => `${a.name} (${a.size})`).join(', ')}`);
+  }
 
-  // Direct file-save: handle outside (or inside) sessions when the entire
-  // message is a "save this to <location>" command.
+  // Direct file-save: when the user attaches files with a save-destination,
+  // always save them immediately regardless of session state.
+  // isPureSaveText → direct-only (no Claude turn). Otherwise save + continue to session.
+  let destDirSaved = false;
+  let precomputedDestDir = null;
   if (message.attachments.size > 0 && isUserAllowed(message.author.id)) {
     const client = getClient();
     const rawText = message.content.trim()
       .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '').trim();
     const destDir = parseDestDir(rawText);
-    if (destDir && isPureSaveText(rawText)) {
-      return handleDirectFileSave(message, destDir);
+    if (destDir) {
+      if (isPureSaveText(rawText)) {
+        return handleDirectFileSave(message, destDir);
+      }
+      // Not a pure save command but has a dest dir — save files first, then continue
+      await handleDirectFileSave(message, destDir);
+      destDirSaved = true;
+      precomputedDestDir = destDir;  // buildFollowUpPayload에 전달해 중복 저장 방지
     }
   }
 
@@ -138,12 +178,18 @@ export async function handleMessageCreate(message) {
   }
 
   const match = findSessionForMessage(message);
-  if (!match) return;
+  if (!match) {
+    // No active session — auto-save any non-image file attachments to RECEIVED_DIR
+    if (!destDirSaved && message.attachments.size > 0 && isUserAllowed(message.author.id)) {
+      await autoSaveAttachments(message);
+    }
+    return;
+  }
   const { session, isThread } = match;
 
   if (isSessionBusy(session)) {
     if (!isUserAllowed(message.author.id)) return;
-    const payload = await buildFollowUpPayload(message);
+    const payload = await buildFollowUpPayload(message, precomputedDestDir);
     if (!payload) return;
     const enqueued = enqueueMessage(session, {
       promptText: payload.promptText,
@@ -157,7 +203,7 @@ export async function handleMessageCreate(message) {
   }
   if (!isUserAllowed(message.author.id)) return;
 
-  const payload = await buildFollowUpPayload(message);
+  const payload = await buildFollowUpPayload(message, precomputedDestDir);
   if (!payload) return;
 
   await message.react('🔄').catch(() => {});
